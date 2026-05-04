@@ -6,8 +6,9 @@ defmodule Manillum.AI.Embedding.OpenAI do
   Used by `vectorize` blocks on Ash resources to generate embeddings for
   semantic-similarity duplicate detection on cards.
 
-  Calls flow through `req_llm`, which loads `OPENAI_API_KEY` from the
-  environment (or `.env`) at startup.
+  Calls flow through `Manillum.AI.ReqLLM` (which delegates to `ReqLLM` in
+  prod and `Manillum.AI.ReqLLMStub` in tests). `ReqLLM` loads
+  `OPENAI_API_KEY` from the environment (or `.env`) at startup.
 
   ## Examples
 
@@ -32,7 +33,7 @@ defmodule Manillum.AI.Embedding.OpenAI do
   def generate(texts, opts) when is_list(texts) do
     inputs = Enum.map(texts, &(&1 || ""))
 
-    case ReqLLM.embed(@model, inputs, opts) do
+    case Manillum.AI.ReqLLM.embed(@model, inputs, opts) do
       {:ok, embeddings} when is_list(embeddings) -> {:ok, embeddings}
       {:error, error} -> {:error, error}
     end
