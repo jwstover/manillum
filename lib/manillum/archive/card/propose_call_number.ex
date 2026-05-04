@@ -74,7 +74,8 @@ defmodule Manillum.Archive.Card.ProposeCallNumber do
     [
       %{
         slug: slug <> "-ALT",
-        reason: "Qualifier disambiguator for place card type (§7.4) — replace ALT with a region or era."
+        reason:
+          "Qualifier disambiguator for place card type (§7.4) — replace ALT with a region or era."
       }
     ]
   end

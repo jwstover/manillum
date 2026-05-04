@@ -184,8 +184,7 @@ defmodule Manillum.Archive.CardTest do
     test "person collision suggests letter-suffix slugs", %{user: user, seed_card: seed_card} do
       _existing = seed_card.("CAESAR", :person)
 
-      assert {:ok,
-              %{status: :collision, suggestions: suggestions}} =
+      assert {:ok, %{status: :collision, suggestions: suggestions}} =
                Manillum.Archive.Card
                |> Ash.ActionInput.for_action(:propose_call_number, %{
                  user_id: user.id,
