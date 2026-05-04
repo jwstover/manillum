@@ -13,7 +13,12 @@ defmodule Manillum.Archive do
   end
 
   resources do
-    resource Manillum.Archive.Card
+    resource Manillum.Archive.Card do
+      define :draft_card, action: :draft
+      define :file_card, action: :file
+      define :propose_call_number, action: :propose_call_number
+    end
+
     resource Manillum.Archive.Capture
   end
 end
