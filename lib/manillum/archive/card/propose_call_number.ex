@@ -35,11 +35,14 @@ defmodule Manillum.Archive.Card.ProposeCallNumber do
     end
   end
 
-  defp collision?(user_id, drawer, _date_token, slug) do
-    # Per §7.4 the unique constraint is (user_id, drawer, slug) — date_token
-    # can vary between two cards that nonetheless collide.
+  defp collision?(user_id, drawer, date_token, slug) do
+    # Per §7.4 (clarified): the unique key is the full call_number —
+    # (user_id, drawer, date_token, slug). Same slug + drawer with a
+    # different date_token does not collide.
     Card
-    |> Ash.Query.filter(user_id == ^user_id and drawer == ^drawer and slug == ^slug)
+    |> Ash.Query.filter(
+      user_id == ^user_id and drawer == ^drawer and date_token == ^date_token and slug == ^slug
+    )
     |> Ash.exists?(authorize?: false)
   end
 
@@ -58,14 +61,18 @@ defmodule Manillum.Archive.Card.ProposeCallNumber do
     end
   end
 
-  defp suggest(slug, :event, date_token) when is_binary(date_token) and date_token != "" do
-    # Year disambiguator using the supplied date_token.
-    [
+  defp suggest(slug, :event, _date_token) do
+    # Under the (drawer, date_token, slug) identity, an event collision means
+    # both cards already share a date_token — so a "year disambiguator" would
+    # be redundant. Fall back to numeric / descriptive suffixes; the user can
+    # rename to something more meaningful (e.g. "-NAVAL", "-LAND") via the
+    # filing-tray edit affordance.
+    for n <- 2..4 do
       %{
-        slug: slug <> "-" <> date_token,
-        reason: "Date disambiguator (#{date_token}) for event card type (§7.4)."
+        slug: slug <> "-" <> Integer.to_string(n),
+        reason: "Numeric disambiguator (event card type, dates already match per §7.4)."
       }
-    ]
+    end
   end
 
   defp suggest(slug, :place, _date_token) do

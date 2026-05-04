@@ -180,9 +180,10 @@ defmodule Manillum.Archive.Card do
   end
 
   identities do
-    # Per spec §7.4: "Slug must be unique within a drawer for a given user."
-    # Two cards with the same drawer + slug collide regardless of
-    # date_token; disambiguation is handled by `:propose_call_number`.
-    identity :unique_drawer_slug, [:user_id, :drawer, :slug]
+    # Per spec §7.4 (clarified): the call_number as a whole is unique per
+    # user — i.e. (drawer, date_token, slug) together. Two cards with the
+    # same drawer + slug but different date_tokens coexist naturally; only
+    # full-segment collisions trigger disambiguation in `:propose_call_number`.
+    identity :unique_call_number, [:user_id, :drawer, :date_token, :slug]
   end
 end
