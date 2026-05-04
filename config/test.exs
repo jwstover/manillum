@@ -4,6 +4,10 @@ config :manillum, token_signing_secret: "l8wyuoWhLJtwy2iG0cP6NcNYK8tvJRph"
 config :bcrypt_elixir, log_rounds: 1
 config :ash, policies: [show_policy_breakdowns?: true], disable_async?: true
 
+# Route prompt-backed Ash actions through the in-process stub so tests never
+# hit Anthropic/OpenAI. See `Manillum.AI.ReqLLMStub`.
+config :manillum, req_llm_module: Manillum.AI.ReqLLMStub
+
 # Configure your database
 #
 # The MIX_TEST_PARTITION environment variable can be used
