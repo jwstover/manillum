@@ -35,3 +35,7 @@ manillum-*.tar
 npm-debug.log
 /assets/node_modules/
 /.expert/
+
+# Local environment overrides (loaded by req_llm via dotenvy).
+/.env
+/.env.local
