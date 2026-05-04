@@ -256,4 +256,54 @@ defmodule Manillum.Archive.CardTest do
                result
     end
   end
+
+  describe ":file action" do
+    setup do
+      user = Ash.Seed.seed!(Manillum.Accounts.User, %{email: "file_test@example.com"})
+
+      seed = fn slug, status ->
+        Ash.Seed.seed!(Card, %{
+          user_id: user.id,
+          drawer: :ANT,
+          date_token: "1177BC",
+          slug: slug,
+          card_type: :event,
+          front: "F",
+          back: "B",
+          status: status
+        })
+      end
+
+      {:ok, user: user, seed: seed}
+    end
+
+    test "transitions a :draft card to :filed", %{seed: seed} do
+      card = seed.("DRAFT-CARD", :draft)
+
+      assert {:ok, filed} =
+               card
+               |> Ash.Changeset.for_update(:file, %{})
+               |> Ash.update()
+
+      assert filed.status == :filed
+    end
+
+    test "rejects filing an already-filed card", %{seed: seed} do
+      card = seed.("FILED-CARD", :filed)
+
+      assert {:error, _} =
+               card
+               |> Ash.Changeset.for_update(:file, %{})
+               |> Ash.update()
+    end
+
+    test "rejects filing an archived card", %{seed: seed} do
+      card = seed.("ARCH-CARD", :archived)
+
+      assert {:error, _} =
+               card
+               |> Ash.Changeset.for_update(:file, %{})
+               |> Ash.update()
+    end
+  end
 end

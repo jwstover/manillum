@@ -49,6 +49,31 @@ defmodule Manillum.Archive.Card do
       change set_attribute(:status, :draft)
     end
 
+    update :file do
+      description """
+      Promote a `:draft` Card to `:filed`. Rejects any current status other
+      than `:draft`. Spec §5 Stream B task 2 also calls for kicking off
+      async embedding generation and creating tag/link associations from
+      this action; those land in Slice 4 / Gate B.2 / B.3. For Gate B.1
+      this is just the status transition.
+
+      Note on uniqueness: the DB-level identity on `(user_id, drawer, slug)`
+      is the source of truth and applies to drafts as well as filed cards.
+      Filing doesn't change segments, so it can't introduce a collision —
+      the cataloging pipeline (Slice 4) calls `:propose_call_number` first
+      and disambiguates the slug before drafting.
+      """
+
+      accept []
+      require_atomic? false
+
+      validate attribute_equals(:status, :draft) do
+        message "Card must be in :draft status to be filed (current: %{value})."
+      end
+
+      change set_attribute(:status, :filed)
+    end
+
     action :propose_call_number, Manillum.Archive.Card.CallNumberProposal do
       description """
       Pure read action: given a user + segments + card_type, check whether
