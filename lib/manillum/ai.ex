@@ -1,21 +1,26 @@
 defmodule Manillum.AI do
   @moduledoc """
-  Ash domain housing prompt-backed actions and the OpenAI embedding model
-  implementation. The "AI boundary" for the rest of the app: no other module
-  calls Anthropic or OpenAI directly.
+  Namespace for AI-related modules that don't belong to a feature domain.
 
-  > #### Note on the spec {: .info}
-  >
-  > Spec §4 originally describes `Manillum.AI` as "a thin module namespace (not
-  > its own Ash domain)". With the AshAI-native amendment (2026-05-04),
-  > prompt-backed actions live on Ash resources, which need to be hosted in an
-  > Ash domain. Making `Manillum.AI` itself the domain keeps the namespace flat
-  > and matches what the spec actually wants in §5 Stream A/C. Flagged for
-  > reviewer at Gate A.2.
+  Hosts:
+
+    * `Manillum.AI.Embedding.OpenAI` — `AshAi.EmbeddingModel` impl backed by
+      OpenAI's `text-embedding-3-small` model.
+    * `Manillum.AI.ReqLLM` — indirection layer between AshAI prompt actions
+      and the underlying `ReqLLM` client. Tests swap in
+      `Manillum.AI.ReqLLMStub` (in `test/support/`) via the
+      `:manillum, :req_llm_module` config key.
+
+  **Manillum.AI is intentionally not an Ash domain and hosts no Ash resources.**
+  Prompt-backed actions live on whatever feature domain owns their output:
+
+    * Cataloging on `Manillum.Archive` (via the `Capture` resource — see the
+      MVP spec §5 Stream C).
+    * Chat on `Manillum.Conversations` (Stream D, scaffolded by
+      `mix ash_ai.gen.chat`).
+    * Future review-prompt generation on `Manillum.Reviews`.
+
+  No other module calls Anthropic or OpenAI directly — the boundary is
+  enforced by convention and code review, not by domain membership.
   """
-  use Ash.Domain, otp_app: :manillum
-
-  resources do
-    resource Manillum.AI.SmokeTest
-  end
 end
