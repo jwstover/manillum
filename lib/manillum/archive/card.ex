@@ -27,6 +27,27 @@ defmodule Manillum.Archive.Card do
 
   actions do
     defaults [:read]
+
+    create :draft do
+      description """
+      Create a card in `:draft` status. Used by the cataloging pipeline
+      (Slice 4 sets `capture_id`) and by direct creation in IEx / tests.
+      Drafts get promoted to `:filed` via the `:file` action (M-17).
+      """
+
+      accept [
+        :user_id,
+        :capture_id,
+        :drawer,
+        :date_token,
+        :slug,
+        :card_type,
+        :front,
+        :back
+      ]
+
+      change set_attribute(:status, :draft)
+    end
   end
 
   attributes do

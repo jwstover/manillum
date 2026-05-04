@@ -73,4 +73,67 @@ defmodule Manillum.Archive.CardTest do
                loaded.call_number
     end
   end
+
+  describe ":draft action" do
+    setup do
+      user = Ash.Seed.seed!(Manillum.Accounts.User, %{email: "draft_test@example.com"})
+      {:ok, user: user}
+    end
+
+    test "creates a card in :draft status with the supplied segments", %{user: user} do
+      attrs = %{
+        user_id: user.id,
+        drawer: :ANT,
+        date_token: "1177BC",
+        slug: "COLLAPSE",
+        card_type: :event,
+        front: "What is the Bronze Age collapse?",
+        back: "Between 1200 and 1150 BCE, ..."
+      }
+
+      assert {:ok, card} =
+               Card
+               |> Ash.Changeset.for_create(:draft, attrs)
+               |> Ash.create()
+
+      assert card.status == :draft
+      assert card.drawer == :ANT
+      assert card.date_token == "1177BC"
+      assert card.slug == "COLLAPSE"
+    end
+
+    test "rejects an invalid drawer enum", %{user: user} do
+      attrs = %{
+        user_id: user.id,
+        drawer: :NOPE,
+        date_token: "1177BC",
+        slug: "COLLAPSE",
+        card_type: :event,
+        front: "F",
+        back: "B"
+      }
+
+      assert {:error, _} =
+               Card
+               |> Ash.Changeset.for_create(:draft, attrs)
+               |> Ash.create()
+    end
+
+    test "rejects when a required field is missing", %{user: user} do
+      attrs = %{
+        user_id: user.id,
+        drawer: :ANT,
+        # date_token missing
+        slug: "COLLAPSE",
+        card_type: :event,
+        front: "F",
+        back: "B"
+      }
+
+      assert {:error, _} =
+               Card
+               |> Ash.Changeset.for_create(:draft, attrs)
+               |> Ash.create()
+    end
+  end
 end
