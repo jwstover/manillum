@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "tidewave": {
+      "type": "http",
+      "url": "http://localhost:4040/tidewave/mcp"
+    },
+    "pyllar": {
+      "type": "http",
+      "url": "https://citadel-floral-star-4898.fly.dev/mcp",
+      "headers": {
+        "Authorization": "Bearer ${PYLLAR_API_KEY}"
+      }
+    },
+    "daisyui": {
+      "type": "sse",
+      "url": "https://gitmcp.io/saadeghi/daisyui"
+    }
+  }
+}

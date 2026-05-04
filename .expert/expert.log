@@ -1,0 +1,463 @@
+
+13:30:10.560 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:30:10.560 instance_id=19DF4057C6D [debug] handled notification client -> server workspace/didChangeWatchedFiles in 2ms
+
+13:30:12.911 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:30:12.911 instance_id=19DF4057C6D [debug] handled notification client -> server workspace/didChangeWatchedFiles in 17ms
+
+13:30:13.033 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:30:13.033 instance_id=19DF4057C6D [debug] handled notification client -> server workspace/didChangeWatchedFiles in 12ms
+
+13:30:13.133 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:30:13.133 instance_id=19DF4057C6D [debug] handled notification client -> server workspace/didChangeWatchedFiles in 12ms
+
+13:30:13.235 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:30:13.235 instance_id=19DF4057C6D [debug] handled notification client -> server workspace/didChangeWatchedFiles in 13ms
+
+13:30:13.332 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:30:13.332 instance_id=19DF4057C6D [debug] handled notification client -> server workspace/didChangeWatchedFiles in 9ms
+
+13:30:13.441 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:30:13.441 instance_id=19DF4057C6D [debug] handled notification client -> server workspace/didChangeWatchedFiles in 369µs
+
+13:30:28.846 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:30:28.846 instance_id=19DF4057C6D [debug] handled notification client -> server workspace/didChangeWatchedFiles in 681µs
+
+13:30:30.499 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:30:30.499 instance_id=19DF4057C6D [debug] handled notification client -> server workspace/didChangeWatchedFiles in 290µs
+
+13:30:31.559 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:30:31.559 instance_id=19DF4057C6D [debug] handled notification client -> server workspace/didChangeWatchedFiles in 5ms
+
+13:30:31.660 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:30:31.660 instance_id=19DF4057C6D [debug] handled notification client -> server workspace/didChangeWatchedFiles in 4ms
+
+13:30:31.759 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:30:31.759 instance_id=19DF4057C6D [debug] handled notification client -> server workspace/didChangeWatchedFiles in 357µs
+
+13:30:35.850 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:30:35.850 instance_id=19DF4057C6D [debug] handled notification client -> server workspace/didChangeWatchedFiles in 321µs
+
+13:30:38.178 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:30:38.178 instance_id=19DF4057C6D [debug] handled notification client -> server workspace/didChangeWatchedFiles in 318µs
+
+13:30:41.201 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:30:41.201 instance_id=19DF4057C6D [debug] handled notification client -> server workspace/didChangeWatchedFiles in 432µs
+
+13:30:42.907 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:30:42.907 instance_id=19DF4057C6D [debug] handled notification client -> server workspace/didChangeWatchedFiles in 288µs
+
+13:30:44.977 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:30:44.977 instance_id=19DF4057C6D [debug] handled notification client -> server workspace/didChangeWatchedFiles in 6ms
+
+13:30:45.090 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:30:45.090 instance_id=19DF4057C6D [debug] handled notification client -> server workspace/didChangeWatchedFiles in 17ms
+
+13:30:45.213 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:30:45.213 instance_id=19DF4057C6D [debug] handled notification client -> server workspace/didChangeWatchedFiles in 10ms
+
+13:30:45.320 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:30:45.320 instance_id=19DF4057C6D [debug] handled notification client -> server workspace/didChangeWatchedFiles in 16ms
+
+13:30:45.455 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:30:45.455 instance_id=19DF4057C6D [debug] handled notification client -> server workspace/didChangeWatchedFiles in 19ms
+
+13:30:45.562 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:30:45.562 instance_id=19DF4057C6D [debug] handled notification client -> server workspace/didChangeWatchedFiles in 24ms
+
+13:30:45.670 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:30:45.670 instance_id=19DF4057C6D [debug] handled notification client -> server workspace/didChangeWatchedFiles in 30ms
+
+13:30:45.770 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:30:45.770 instance_id=19DF4057C6D [debug] handled notification client -> server workspace/didChangeWatchedFiles in 14ms
+
+13:30:45.862 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:30:45.862 instance_id=19DF4057C6D [debug] handled notification client -> server workspace/didChangeWatchedFiles in 6ms
+
+13:30:45.973 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:30:45.973 instance_id=19DF4057C6D [debug] handled notification client -> server workspace/didChangeWatchedFiles in 14ms
+
+13:30:46.124 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:30:46.124 instance_id=19DF4057C6D [debug] handled notification client -> server workspace/didChangeWatchedFiles in 19ms
+
+13:30:46.247 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:30:46.247 instance_id=19DF4057C6D [debug] handled notification client -> server workspace/didChangeWatchedFiles in 15ms
+
+13:30:46.340 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:30:46.340 instance_id=19DF4057C6D [debug] handled notification client -> server workspace/didChangeWatchedFiles in 8ms
+
+13:30:46.432 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:30:46.432 instance_id=19DF4057C6D [debug] handled notification client -> server workspace/didChangeWatchedFiles in 292µs
+
+13:31:27.549 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:31:27.549 instance_id=19DF4057C6D [debug] handled notification client -> server workspace/didChangeWatchedFiles in 4ms
+
+13:31:41.132 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:31:41.132 instance_id=19DF4057C6D [debug] handled notification client -> server workspace/didChangeWatchedFiles in 389µs
+
+13:31:49.218 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:31:49.218 instance_id=19DF4057C6D [debug] handled notification client -> server workspace/didChangeWatchedFiles in 358µs
+
+13:31:52.700 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:31:52.700 instance_id=19DF4057C6D [debug] handled notification client -> server workspace/didChangeWatchedFiles in 342µs
+
+13:31:54.214 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:31:54.214 instance_id=19DF4057C6D [debug] handled notification client -> server workspace/didChangeWatchedFiles in 511µs
+
+13:31:54.379 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:31:54.379 instance_id=19DF4057C6D [debug] handled notification client -> server workspace/didChangeWatchedFiles in 298µs
+
+13:32:19.054 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:32:19.054 instance_id=19DF4057C6D [debug] handled notification client -> server workspace/didChangeWatchedFiles in 1ms
+
+13:32:30.537 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:32:30.537 instance_id=19DF4057C6D [debug] handled notification client -> server workspace/didChangeWatchedFiles in 1ms
+
+13:32:49.116 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:32:49.116 instance_id=19DF4057C6D [debug] handled notification client -> server workspace/didChangeWatchedFiles in 541µs
+
+13:40:15.540 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:40:15.540 instance_id=19DF4057C6D [debug] handled notification client -> server textDocument/didClose in 11ms
+
+13:40:15.541 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:40:15.541 instance_id=19DF4057C6D [info] Opened file:///Users/jacob.stover/code/personal/manillum/mix.exs
+
+13:40:15.541 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:40:15.541 instance_id=19DF4057C6D [debug] handled notification client -> server textDocument/didOpen in 683µs
+
+13:41:38.220 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:41:38.220 instance_id=19DF4057C6D [debug] handled notification client -> server workspace/didChangeWatchedFiles in 1ms
+
+13:41:39.641 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:41:39.641 instance_id=19DF4057C6D [debug] handled notification client -> server workspace/didChangeWatchedFiles in 432µs
+
+13:41:42.088 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:41:42.088 instance_id=19DF4057C6D [debug] handled notification client -> server workspace/didChangeWatchedFiles in 433µs
+
+13:41:43.218 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:41:43.218 instance_id=19DF4057C6D [debug] handled notification client -> server workspace/didChangeWatchedFiles in 397µs
+
+13:41:44.054 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:41:44.054 instance_id=19DF4057C6D [debug] handled notification client -> server workspace/didChangeWatchedFiles in 362µs
+
+13:55:34.680 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:55:34.680 instance_id=19DF4057C6D [debug] handled notification client -> server textDocument/didChange in 45ms
+
+13:55:34.772 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:55:34.772 instance_id=19DF4057C6D [debug] Node port message: 
+13:55:34.772 [info] Plugins found 0 results in 0.015 ms
+
+
+13:55:34.773 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:55:34.773 instance_id=19DF4057C6D [debug] sent notification server -> client textDocument/publishDiagnostics
+
+13:55:34.784 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:55:34.784 instance_id=19DF4057C6D [debug] handled notification client -> server textDocument/didChange in 567µs
+
+13:55:34.851 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:55:34.851 instance_id=19DF4057C6D [debug] sent notification server -> client textDocument/publishDiagnostics
+
+13:55:34.851 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:55:34.851 instance_id=19DF4057C6D [debug] Node port message: 
+13:55:34.851 [info] Plugins found 0 results in 0.004 ms
+
+
+13:55:34.934 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:55:34.934 instance_id=19DF4057C6D [debug] handled notification client -> server textDocument/didChange in 618µs
+
+13:55:35.002 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:55:35.002 instance_id=19DF4057C6D [debug] Node port message: 
+13:55:35.002 [info] Plugins found 0 results in 0.004 ms
+
+
+13:55:35.002 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:55:35.002 instance_id=19DF4057C6D [debug] sent notification server -> client textDocument/publishDiagnostics
+
+13:55:35.041 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:55:35.041 instance_id=19DF4057C6D [debug] handled notification client -> server textDocument/didChange in 679µs
+
+13:55:35.088 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:55:35.088 instance_id=19DF4057C6D [info] Completion for XpPos<<113, 2>>
+
+13:55:35.123 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:55:35.123 instance_id=19DF4057C6D [debug] Node port message: 
+13:55:35.123 [info] Plugins found 0 results in 0.005 ms
+
+
+13:55:35.124 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:55:35.124 instance_id=19DF4057C6D [debug] sent notification server -> client textDocument/publishDiagnostics
+
+13:55:35.197 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:55:35.197 instance_id=19DF4057C6D [info] No formatter found in /Users/jacob.stover/code/personal/manillum/mix.exs error was false
+
+13:55:35.197 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:55:35.197 instance_id=19DF4057C6D [info] found formatter in /Users/jacob.stover/code/personal/manillum
+
+13:55:35.634 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:55:35.634 instance_id=19DF4057C6D [debug] handled request client -> server textDocument/documentSymbol in 92ms
+
+13:55:36.911 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:55:36.911 instance_id=19DF4057C6D [debug] handled notification client -> server textDocument/didChange in 2ms
+
+13:55:36.995 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:55:36.995 instance_id=19DF4057C6D [debug] sent notification server -> client textDocument/publishDiagnostics
+
+13:55:36.996 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:55:36.996 instance_id=19DF4057C6D [debug] Node port message: 
+13:55:36.995 [info] Plugins found 0 results in 0.007 ms
+
+
+13:55:37.285 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:55:37.285 instance_id=19DF4057C6D [debug] handled notification client -> server textDocument/didChange in 1ms
+
+13:55:37.366 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:55:37.366 instance_id=19DF4057C6D [debug] sent notification server -> client textDocument/publishDiagnostics
+
+13:55:37.366 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:55:37.366 instance_id=19DF4057C6D [debug] Node port message: 
+13:55:37.366 [info] Plugins found 0 results in 0.005 ms
+
+
+13:55:37.863 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:55:37.863 instance_id=19DF4057C6D [debug] handled request client -> server textDocument/documentSymbol in 77ms
+
+13:55:38.022 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:55:38.022 instance_id=19DF4057C6D [debug] handled notification client -> server textDocument/didChange in 546µs
+
+13:55:38.096 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:55:38.096 instance_id=19DF4057C6D [debug] Node port message: 
+13:55:38.096 [info] Plugins found 0 results in 0.005 ms
+
+
+13:55:38.098 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:55:38.098 instance_id=19DF4057C6D [debug] sent notification server -> client textDocument/publishDiagnostics
+
+13:55:38.634 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:55:38.634 instance_id=19DF4057C6D [debug] handled request client -> server textDocument/documentSymbol in 109ms
+
+13:55:39.849 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:55:39.849 instance_id=19DF4057C6D [debug] handled notification client -> server textDocument/didChange in 1ms
+
+13:55:39.951 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:55:39.951 instance_id=19DF4057C6D [debug] sent notification server -> client textDocument/publishDiagnostics
+
+13:55:39.951 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:55:39.951 instance_id=19DF4057C6D [debug] Node port message: 
+13:55:39.951 [info] Plugins found 0 results in 0.004 ms
+
+
+13:55:40.020 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:55:40.020 instance_id=19DF4057C6D [info] Local completions are: [function: (pop_in, put_elem, put_in)   macro: (pop_in, put_in)   ]
+
+13:55:40.032 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:55:40.031 instance_id=19DF4057C6D [info] Emitting Completions: [3:pop_in(data, keys) 3:put_elem(tuple, index, value) 3:put_in(data, keys, value) 3:pop_in(path) 3:put_in(path, value) ]
+
+13:55:40.037 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:55:40.037 instance_id=19DF4057C6D [debug] handled request client -> server textDocument/completion in 4995ms
+
+13:55:40.265 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:55:40.265 instance_id=19DF4057C6D [debug] handled notification client -> server textDocument/didChange in 654µs
+
+13:55:40.353 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:55:40.353 instance_id=19DF4057C6D [debug] sent notification server -> client textDocument/publishDiagnostics
+
+13:55:40.353 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:55:40.353 instance_id=19DF4057C6D [debug] Node port message: 
+13:55:40.353 [info] Plugins found 0 results in 0.006 ms
+
+
+13:55:40.848 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:55:40.848 instance_id=19DF4057C6D [debug] handled request client -> server textDocument/documentSymbol in 80ms
+
+13:55:41.347 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:55:41.347 instance_id=19DF4057C6D [debug] handled notification client -> server textDocument/didChange in 599µs
+
+13:55:41.423 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:55:41.423 instance_id=19DF4057C6D [debug] sent notification server -> client textDocument/publishDiagnostics
+
+13:55:41.423 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:55:41.423 instance_id=19DF4057C6D [debug] Node port message: 
+13:55:41.423 [info] Plugins found 0 results in 0.005 ms
+
+
+13:55:41.926 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+13:55:41.926 instance_id=19DF4057C6D [debug] handled request client -> server textDocument/documentSymbol in 77ms
+
+14:02:16.340 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+14:02:16.340 instance_id=19DF4057C6D [debug] handled notification client -> server textDocument/didChange in 1ms
+
+14:02:16.453 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+14:02:16.453 instance_id=19DF4057C6D [debug] sent notification server -> client textDocument/publishDiagnostics
+
+14:02:16.453 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+14:02:16.453 instance_id=19DF4057C6D [debug] Node port message: 
+14:02:16.453 [info] Plugins found 0 results in 0.008 ms
+
+
+14:02:16.925 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+14:02:16.925 instance_id=19DF4057C6D [debug] handled request client -> server textDocument/documentSymbol in 83ms
+
+14:02:17.473 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+14:02:17.473 instance_id=19DF4057C6D [debug] handled notification client -> server textDocument/didSave in 4ms
+
+14:02:17.477 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+14:02:17.477 instance_id=19DF4057C6D [error] handling server specific request XPGenLSP.Requests.Shutdown
+
+14:02:17.477 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+14:02:17.477 instance_id=19DF4057C6D [info] Shutting down
+
+14:02:17.477 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+14:02:17.477 instance_id=19DF4057C6D [error] handling server specific request XPGenLSP.Requests.Shutdown
+
+14:02:17.478 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+14:02:17.478 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+14:02:17.478 instance_id=19DF4057C6D [error] Received shutdown after shutdown. Ignoring
+
+14:02:17.477 instance_id=19DF4057C6D [debug] handled request client -> server shutdown in 1ms
+
+14:02:17.479 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+14:02:17.479 instance_id=19DF4057C6D [error] Failed to handle Elixir.XPGenLSP.Requests.Shutdown, {{:error, :shutting_down}, %XPExpert.State{initialized?: true, shutdown_received?: true, in_flight_requests: %{}, deps_declined_projects: MapSet.new([])}}
+
+14:02:17.480 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+14:02:17.480 instance_id=19DF4057C6D [debug] handled request client -> server shutdown in 2ms
+
+14:02:17.488 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+14:02:17.488 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+14:02:17.487 instance_id=19DF4057C6D [error] handling server specific request XPGenLSP.Requests.Shutdown
+
+14:02:17.487 instance_id=19DF4057C6D [error] handling server specific request XPGenLSP.Requests.Shutdown
+
+14:02:17.488 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+14:02:17.488 instance_id=19DF4057C6D [error] Received shutdown after shutdown. Ignoring
+
+14:02:17.488 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+14:02:17.488 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+14:02:17.488 instance_id=19DF4057C6D [error] Failed to handle Elixir.XPGenLSP.Requests.Shutdown, {{:error, :shutting_down}, %XPExpert.State{initialized?: true, shutdown_received?: true, in_flight_requests: %{}, deps_declined_projects: MapSet.new([])}}
+
+14:02:17.488 instance_id=19DF4057C6D [error] Received shutdown after shutdown. Ignoring
+
+14:02:17.488 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+14:02:17.488 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+14:02:17.488 instance_id=19DF4057C6D [debug] handled request client -> server shutdown in 296µs
+
+14:02:17.488 instance_id=19DF4057C6D [error] Failed to handle Elixir.XPGenLSP.Requests.Shutdown, {{:error, :shutting_down}, %XPExpert.State{initialized?: true, shutdown_received?: true, in_flight_requests: %{}, deps_declined_projects: MapSet.new([])}}
+
+14:02:17.488 instance_id=19DF4057C6D [debug] sent notification server -> client window/logMessage
+
+14:02:17.488 instance_id=19DF4057C6D [debug] handled request client -> server shutdown in 267µs
+
+14:02:17.495 instance_id=19DF4057C6D [notice] SIGTERM received - shutting down
+
+
+14:02:17.496 instance_id=19DF4057C6D [notice] SIGTERM received - shutting down
+
+
+14:02:17.496 instance_id=19DF4057C6D [notice] SIGTERM received - shutting down
+
