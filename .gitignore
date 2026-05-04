@@ -39,3 +39,5 @@ npm-debug.log
 # Local environment overrides (loaded by req_llm via dotenvy).
 /.env
 /.env.local
+
+.claude/
