@@ -48,6 +48,44 @@ defmodule Manillum.Archive.Card do
 
       change set_attribute(:status, :draft)
     end
+
+    action :propose_call_number, Manillum.Archive.Card.CallNumberProposal do
+      description """
+      Pure read action: given a user + segments + card_type, check whether
+      the (user_id, drawer, date_token, slug) combination is unique. On
+      success returns a `:resolved` proposal with the formatted call_number;
+      on collision returns a `:collision` proposal with disambiguation
+      suggestions per §7.4.
+      """
+
+      argument :user_id, :uuid, allow_nil?: false
+
+      argument :drawer, :atom do
+        allow_nil? false
+        constraints one_of: [:ANT, :CLA, :MED, :REN, :EAR, :MOD, :CON]
+      end
+
+      argument :date_token, :string, allow_nil?: false
+      argument :slug, :string, allow_nil?: false
+
+      argument :card_type, :atom do
+        allow_nil? false
+        constraints one_of: [:person, :event, :place, :concept, :source, :date, :artifact]
+      end
+
+      run Manillum.Archive.Card.ProposeCallNumber
+    end
+  end
+
+  @doc """
+  Format a call_number from its segments. Mirrors the SQL calculation
+  (spec §7.4): `[DRAWER] · [DATE] · [SLUG]` with U+00B7 middle-dot
+  separator and single ASCII spaces.
+  """
+  @spec format_call_number(atom(), String.t(), String.t()) :: String.t()
+  def format_call_number(drawer, date_token, slug)
+      when is_atom(drawer) and is_binary(date_token) and is_binary(slug) do
+    "#{drawer} · #{date_token} · #{slug}"
   end
 
   attributes do
@@ -117,8 +155,9 @@ defmodule Manillum.Archive.Card do
   end
 
   identities do
-    # Unique per user — the segment combination is the canonical identity that
-    # backs call_number uniqueness per spec §7.4.
-    identity :unique_segments, [:user_id, :drawer, :date_token, :slug]
+    # Per spec §7.4: "Slug must be unique within a drawer for a given user."
+    # Two cards with the same drawer + slug collide regardless of
+    # date_token; disambiguation is handled by `:propose_call_number`.
+    identity :unique_drawer_slug, [:user_id, :drawer, :slug]
   end
 end
