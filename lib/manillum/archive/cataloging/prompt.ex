@@ -96,10 +96,14 @@ defmodule Manillum.Archive.Cataloging.Prompt do
     - **tags**: 1–4 human-readable cross-reference tags, e.g.
       `["Bronze Age", "Eastern Mediterranean"]`. Used for grouping in
       the Reference view.
-    - **entities**: list of named entities (people, places, sources)
-      mentioned in the **back** text. Used downstream to autostub
-      reference cards. Only include entities that have a name; skip
-      generic nouns.
+    - **entities**: named entities (people, places, sources) referenced
+      in the **back** text *other than the card's own subject*. These
+      seed autostub reference cards for cross-linking, so the card's
+      own slug-subject is redundant — exclude it. Include the other
+      named actors, places, and sources the back mentions (e.g. a card
+      about the Iwakura Mission whose back mentions the Meiji government
+      and Japan should list `["Meiji government", "Japan"]`, not
+      `["Iwakura Mission"]`). Skip generic nouns and unnamed groups.
 
     ## Output rules
 

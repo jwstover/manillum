@@ -2,12 +2,6 @@
 
 # Cataloging — Gate C.1 prompt iteration
 
-```elixir
-Mix.install([
-  {:kino, "~> 0.13"}
-])
-```
-
 ## Why this notebook exists
 
 Gate C.1 (per spec §5 Stream C) is the most important review in the project: cataloging
@@ -46,6 +40,23 @@ extra.
 end)
 ```
 
+<!-- livebook:{"output":true} -->
+
+```
+loaded: AshAi.Actions.Prompt
+loaded: Manillum.AI.ReqLLM
+loaded: Manillum.Archive
+loaded: Manillum.Archive.Capture
+loaded: Manillum.Archive.Cataloging.DraftCard
+loaded: Manillum.Archive.Cataloging.Prompt
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+:ok
+```
+
 ## Inspect the prompt
 
 The system message and user message are plain strings; edit
@@ -56,6 +67,102 @@ IO.puts("=== SYSTEM ===\n")
 IO.puts(Manillum.Archive.Cataloging.Prompt.system_message())
 IO.puts("\n=== USER (with sample text) ===\n")
 IO.puts(Manillum.Archive.Cataloging.Prompt.user_message("(your source text here)"))
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+=== SYSTEM ===
+
+You are Livy's archivist: a meticulous cataloger of historical facts.
+
+You are given a chunk of conversation text — a snippet from a chat
+where the user is learning history. Your job is to distill that text
+into one or more **atomic Draft Cards**, each capturing a single
+memorable fact suitable for spaced-repetition review.
+
+## What an atomic card is
+
+Atomic = one self-contained idea. Card front and back must each stand
+on their own without the conversation context. If a fact involves a
+cause and a consequence, that's two cards. If a paragraph discusses
+three different battles, that's at least three cards. Do not combine
+unrelated facts into a single "topic bucket" card — atomic facts are
+not topic buckets.
+
+## Per-card fields
+
+For each atomic fact, produce a Draft Card with these fields:
+
+- **card_type**: one of `:person | :event | :place | :concept | :source | :date | :artifact`
+- **drawer**: one of the seven era codes:
+  - `:ANT` — Antiquity (before ~500 AD)
+  - `:CLA` — Classical (~500 BC – ~500 AD; Greek/Roman world specifically)
+  - `:MED` — Medieval (~500 – ~1500)
+  - `:REN` — Renaissance / Early Modern (~1300 – ~1700)
+  - `:EAR` — Early Modern (~1500 – ~1800)
+  - `:MOD` — Modern (~1800 – ~1945)
+  - `:CON` — Contemporary (~1945 – present)
+  Pick the best fit when eras overlap. Concepts and timeless ideas
+  use `:CON` if they're modern coinages; otherwise the era they
+  belong to (e.g. Plato → `:CLA`, the printing press → `:REN`).
+- **date_token**: the card's "when". Examples:
+  - Specific year: `"1177BC"`, `"1066"`, `"1789"`
+  - Century: `"C5BC"` (5th century BC), `"C13"` (13th century AD)
+  - Placeless / timeless concept that doesn't anchor to a year: `"CON"`
+  - Place-only / non-temporal: `"LOC"`
+  Prefer the most specific token that the source text supports.
+  Don't invent a year that isn't in the text or implied by it.
+- **slug**: 1–3 ALL-CAPS tokens, hyphen-joined, content-relevant.
+  Examples: `"COLLAPSE"`, `"JULIUS-CAESAR"`, `"THERMOPYLAE-NAVAL"`,
+  `"PRINTING-PRESS"`. Prefer a distinguishing descriptor (a person's
+  given name, an event's qualifier, a place's region) over a generic
+  family name. Numeric suffixes (`-A`, `-2`) are a smell.
+- **front**: the review prompt — a single question that the back
+  answers. Phrase it so the answer is recallable, not a gimme.
+  Avoid yes/no. Avoid leading the answer.
+- **back**: the atomic fact itself, 1–4 sentences. Self-contained:
+  a reader who has never seen the conversation should still
+  understand the fact. Mention the people, places, dates that
+  anchor it.
+- **tags**: 1–4 human-readable cross-reference tags, e.g.
+  `["Bronze Age", "Eastern Mediterranean"]`. Used for grouping in
+  the Reference view.
+- **entities**: list of named entities (people, places, sources)
+  mentioned in the **back** text. Used downstream to autostub
+  reference cards. Only include entities that have a name; skip
+  generic nouns.
+
+## Output rules
+
+- Return between 1 and ~10 Draft Cards. Most snippets produce 1–4.
+- If the text contains nothing card-worthy (e.g. it's a question
+  from the user, or a vague statement with no facts), return an
+  empty list.
+- Every card stands alone. Do not produce cards that depend on
+  adjacent cards to make sense.
+- Do not editorialize or add facts not supported by the source text.
+- Be conservative on dates: if the text is genuinely vague, use a
+  century (`"C5BC"`) or `"CON"` for concepts.
+- All field values must conform to the enums above.
+
+
+=== USER (with sample text) ===
+
+Source text to catalog:
+
+"""
+(your source text here)
+"""
+
+Produce the list of atomic Draft Cards now.
+
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+:ok
 ```
 
 ## Fixtures — Gate C.1 review set (spec §5 Stream C)
@@ -167,13 +274,19 @@ fixtures = [
 length(fixtures)
 ```
 
+<!-- livebook:{"output":true} -->
+
+```
+10
+```
+
 ## Run a single fixture
 
 Use this cell during prompt iteration to focus on one fixture at a time. **The
 LLM call hits Anthropic — costs ~$0.001 per fixture.**
 
 ```elixir
-fixture = Enum.at(fixtures, 0)
+fixture = Enum.at(fixtures, 7)
 IO.puts("=== Fixture: #{fixture.label} ===\n")
 IO.puts(fixture.text)
 IO.puts("\n=== Output ===\n")
@@ -199,6 +312,84 @@ case Manillum.Archive.extract_drafts(fixture.text) do
     IO.inspect(error, label: "ERROR")
     {:error, error}
 end
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+=== Fixture: 8. list-style response ===
+
+Three key reforms of the Meiji Restoration:
+
+- Abolition of the feudal han system (1871) and replacement with prefectures
+- Introduction of universal compulsory education (1872)
+- The Iwakura Mission (1871–1873), a diplomatic embassy to study Western institutions
+
+
+=== Output ===
+
+--- DraftCard 1 ---
+call_number  : MOD · 1871 · HAN-SYSTEM-ABOLITION
+type         : event
+front        : What feudal administrative system did Japan abolish in 1871 as part of the Meiji Restoration?
+back         : In 1871, the Meiji Restoration abolished the feudal han (domain) system and replaced it with prefectures, centralizing governmental control in Japan.
+tags         : ["Meiji Restoration", "Japanese Government"]
+entities     : ["Japan"]
+
+--- DraftCard 2 ---
+call_number  : MOD · 1872 · COMPULSORY-EDUCATION
+type         : event
+front        : When did Japan introduce universal compulsory education during the Meiji period?
+back         : Universal compulsory education was introduced in Japan in 1872 as part of the Meiji Restoration's modernization reforms.
+tags         : ["Meiji Restoration", "Education"]
+entities     : ["Japan"]
+
+--- DraftCard 3 ---
+call_number  : MOD · 1871 · IWAKURA-MISSION
+type         : event
+front        : What was the Iwakura Mission and when did it occur?
+back         : The Iwakura Mission (1871–1873) was a diplomatic embassy sent by the Meiji government to study Western institutions and practices, representing Japan's engagement with Western modernization.
+tags         : ["Meiji Restoration", "Diplomacy", "Western Contact"]
+entities     : ["Iwakura Mission"]
+
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+{:ok,
+ [
+   %Manillum.Archive.Cataloging.DraftCard{
+     card_type: :event,
+     drawer: :MOD,
+     date_token: "1871",
+     slug: "HAN-SYSTEM-ABOLITION",
+     front: "What feudal administrative system did Japan abolish in 1871 as part of the Meiji Restoration?",
+     back: "In 1871, the Meiji Restoration abolished the feudal han (domain) system and replaced it with prefectures, centralizing governmental control in Japan.",
+     tags: ["Meiji Restoration", "Japanese Government"],
+     entities: ["Japan"]
+   },
+   %Manillum.Archive.Cataloging.DraftCard{
+     card_type: :event,
+     drawer: :MOD,
+     date_token: "1872",
+     slug: "COMPULSORY-EDUCATION",
+     front: "When did Japan introduce universal compulsory education during the Meiji period?",
+     back: "Universal compulsory education was introduced in Japan in 1872 as part of the Meiji Restoration's modernization reforms.",
+     tags: ["Meiji Restoration", "Education"],
+     entities: ["Japan"]
+   },
+   %Manillum.Archive.Cataloging.DraftCard{
+     card_type: :event,
+     drawer: :MOD,
+     date_token: "1871",
+     slug: "IWAKURA-MISSION",
+     front: "What was the Iwakura Mission and when did it occur?",
+     back: "The Iwakura Mission (1871–1873) was a diplomatic embassy sent by the Meiji government to study Western institutions and practices, representing Japan's engagement with Western modernization.",
+     tags: ["Meiji Restoration", "Diplomacy", "Western Contact"],
+     entities: ["Iwakura Mission"]
+   }
+ ]}
 ```
 
 ## Run the full Gate C.1 suite
@@ -243,18 +434,18 @@ end
 
 For each fixture above, ask:
 
-- **Card count** — is the number of atomic facts produced appropriate to the source?
+* **Card count** — is the number of atomic facts produced appropriate to the source?
   Too few = the LLM is bundling distinct facts. Too many = it's splitting a single
   fact into pieces.
-- **Slugs sensible** — do they read as content-relevant tokens? Numeric / letter
+* **Slugs sensible** — do they read as content-relevant tokens? Numeric / letter
   suffixes (`-2`, `-A`) are a smell (§7.4 style guide).
-- **Dates correct** — does `date_token` match what the text actually says?
+* **Dates correct** — does `date_token` match what the text actually says?
   Hallucinated years are a critical failure mode.
-- **Tags reasonable** — would these tags help group the card in the Reference view?
+* **Tags reasonable** — would these tags help group the card in the Reference view?
   1–4 is the target range.
-- **Entities identified** — does the `entities` list catch named people, places, sources
+* **Entities identified** — does the `entities` list catch named people, places, sources
   in the back text? Generic nouns should be omitted.
-- **Front / back atomic** — does each card stand alone? Could a reviewer see the
+* **Front / back atomic** — does each card stand alone? Could a reviewer see the
   card without the conversation context and still understand it?
 
 When all 10 fixtures consistently produce good cards, sign off Gate C.1 in the
