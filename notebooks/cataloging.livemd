@@ -1,0 +1,261 @@
+<!-- livebook:{"persist_outputs":true} -->
+
+# Cataloging — Gate C.1 prompt iteration
+
+```elixir
+Mix.install([
+  {:kino, "~> 0.13"}
+])
+```
+
+## Why this notebook exists
+
+Gate C.1 (per spec §5 Stream C) is the most important review in the project: cataloging
+quality is iterated by hand against a fixture set of source-text inputs, and the
+prompt template is edited until the LLM consistently produces high-quality
+`%Manillum.Archive.Cataloging.DraftCard{}` outputs.
+
+This notebook is the **Gate C.1 review surface**. It runs the project's `:extract_drafts`
+prompt-backed action against the fixtures below, prints a digest of the resulting
+`DraftCard`s, and lets the reviewer iterate on the prompt **without** touching the DB,
+Oban, or PubSub.
+
+To re-load prompt edits made in `lib/manillum/archive/cataloging/prompt.ex` while the
+notebook is connected, run `r Manillum.Archive.Cataloging.Prompt` in the cell below.
+
+## Connecting
+
+This notebook is configured to connect to a running mix project at the worktree root.
+In Livebook: **Runtime → Mix standalone** → select this repo's directory. Once
+connected, the modules below are available without `Mix.install` — Kino is the only
+extra.
+
+## Smoke check: modules load
+
+```elixir
+[
+  AshAi.Actions.Prompt,
+  Manillum.AI.ReqLLM,
+  Manillum.Archive,
+  Manillum.Archive.Capture,
+  Manillum.Archive.Cataloging.DraftCard,
+  Manillum.Archive.Cataloging.Prompt
+]
+|> Enum.each(fn mod ->
+  IO.puts("loaded: #{inspect(mod)}")
+end)
+```
+
+## Inspect the prompt
+
+The system message and user message are plain strings; edit
+`lib/manillum/archive/cataloging/prompt.ex`, save, then `r Manillum.Archive.Cataloging.Prompt`.
+
+```elixir
+IO.puts("=== SYSTEM ===\n")
+IO.puts(Manillum.Archive.Cataloging.Prompt.system_message())
+IO.puts("\n=== USER (with sample text) ===\n")
+IO.puts(Manillum.Archive.Cataloging.Prompt.user_message("(your source text here)"))
+```
+
+## Fixtures — Gate C.1 review set (spec §5 Stream C)
+
+The reviewer evaluates each fixture against the spec's checklist:
+**card count appropriate? slugs sensible? dates correct? tags reasonable? entities identified?
+front/back atomic and self-contained?**
+
+Edit / extend the list as new failure modes are found.
+
+```elixir
+fixtures = [
+  %{
+    label: "1. short factual paragraph (1 atomic fact)",
+    text: """
+    The Battle of Thermopylae in 480 BC was a key engagement in the second Persian
+    invasion of Greece. A small force led by King Leonidas of Sparta held a narrow
+    coastal pass against a much larger Persian army for three days before being
+    outflanked.
+    """
+  },
+  %{
+    label: "2. multi-paragraph response (5–10 atomic facts)",
+    text: """
+    The Bronze Age collapse refers to the rapid breakdown of the eastern Mediterranean
+    palace economies between roughly 1200 and 1150 BCE. Mycenaean centers in Greece,
+    Hittite cities in Anatolia, and Ugarit on the Syrian coast all show destruction
+    layers in this window.
+
+    Several causes have been proposed: drought, earthquakes, internal rebellion, and
+    raiding by the so-called "Sea Peoples." The current consensus is that no single
+    cause is sufficient — a "systems collapse" model fits the evidence better, where
+    the entangled palace economies failed together once enough nodes broke.
+
+    Egypt, while damaged by Sea Peoples raids under Ramesses III, survived as an
+    organized state. Recovery in the wider region took several centuries; the early
+    Iron Age that followed is sometimes called a "dark age" for the lack of writing.
+    """
+  },
+  %{
+    label: "3. one-sentence selection",
+    text: """
+    The printing press, brought to Europe by Johannes Gutenberg around 1440, dramatically
+    reduced the cost of book production.
+    """
+  },
+  %{
+    label: "4. multiple people, places, and a concept",
+    text: """
+    The First Triumvirate (60 BC) was an informal political alliance between Julius
+    Caesar, Pompey the Great, and Marcus Crassus. It allowed Caesar to secure the
+    consulship and a five-year command in Gaul. The triumvirate broke down after
+    Crassus's death at the Battle of Carrhae (53 BC), leaving Caesar and Pompey to
+    contest power directly.
+    """
+  },
+  %{
+    label: "5. ambiguous slug — Caesar disambiguation case",
+    text: """
+    Augustus, born Gaius Octavius and later known as Octavian, became the first Roman
+    emperor in 27 BC. He was Julius Caesar's great-nephew and adopted heir, and his
+    rise to sole power followed the defeat of Mark Antony at the Battle of Actium
+    in 31 BC.
+    """
+  },
+  %{
+    label: "6. duplicate-of-existing-fixture",
+    text: """
+    Around 1200 BC, the Mediterranean palace economies of the Bronze Age all collapsed.
+    """
+  },
+  %{
+    label: "7. fresh era — medieval / modern",
+    text: """
+    The Black Death reached Europe in 1347, carried by Genoese trading ships from the
+    Crimean port of Kaffa. Within four years it had killed an estimated one-third of
+    the European population. The plague returned in waves through the next century,
+    reshaping labor markets and feudal land relationships.
+    """
+  },
+  %{
+    label: "8. list-style response",
+    text: """
+    Three key reforms of the Meiji Restoration:
+
+    - Abolition of the feudal han system (1871) and replacement with prefectures
+    - Introduction of universal compulsory education (1872)
+    - The Iwakura Mission (1871–1873), a diplomatic embassy to study Western institutions
+    """
+  },
+  %{
+    label: "9. explicit dates",
+    text: """
+    The Treaty of Westphalia, signed on October 24, 1648, ended the Thirty Years' War
+    in the Holy Roman Empire and the Eighty Years' War between Spain and the Dutch
+    Republic. It is often cited as the origin of the modern European state system.
+    """
+  },
+  %{
+    label: "10. obscure topic — hallucination risk",
+    text: """
+    The Almoravid dynasty, founded by Abdullah ibn Yasin among Sanhaja Berber tribes in
+    the 1040s, expanded from the western Sahara to control Morocco and al-Andalus by
+    the late 11th century. Their capital at Marrakesh was founded in 1070.
+    """
+  }
+]
+
+length(fixtures)
+```
+
+## Run a single fixture
+
+Use this cell during prompt iteration to focus on one fixture at a time. **The
+LLM call hits Anthropic — costs ~$0.001 per fixture.**
+
+```elixir
+fixture = Enum.at(fixtures, 0)
+IO.puts("=== Fixture: #{fixture.label} ===\n")
+IO.puts(fixture.text)
+IO.puts("\n=== Output ===\n")
+
+case Manillum.Archive.extract_drafts(fixture.text) do
+  {:ok, drafts} ->
+    drafts
+    |> Enum.with_index(1)
+    |> Enum.each(fn {%Manillum.Archive.Cataloging.DraftCard{} = d, i} ->
+      IO.puts("--- DraftCard #{i} ---")
+      IO.puts("call_number  : #{d.drawer} · #{d.date_token} · #{d.slug}")
+      IO.puts("type         : #{d.card_type}")
+      IO.puts("front        : #{d.front}")
+      IO.puts("back         : #{d.back}")
+      IO.puts("tags         : #{inspect(d.tags)}")
+      IO.puts("entities     : #{inspect(d.entities)}")
+      IO.puts("")
+    end)
+
+    {:ok, drafts}
+
+  {:error, error} ->
+    IO.inspect(error, label: "ERROR")
+    {:error, error}
+end
+```
+
+## Run the full Gate C.1 suite
+
+This iterates every fixture and prints a digest. Pause between rounds — the
+reviewer's job is to walk through each one and rate the output, then suggest prompt
+edits. Re-run after each prompt iteration.
+
+```elixir
+for fixture <- fixtures do
+  IO.puts("\n=========================================")
+  IO.puts("=== #{fixture.label}")
+  IO.puts("=========================================\n")
+  IO.puts(fixture.text)
+  IO.puts("\n--- DraftCards ---\n")
+
+  case Manillum.Archive.extract_drafts(fixture.text) do
+    {:ok, drafts} ->
+      IO.puts("count: #{length(drafts)}")
+
+      drafts
+      |> Enum.with_index(1)
+      |> Enum.each(fn {%Manillum.Archive.Cataloging.DraftCard{} = d, i} ->
+        IO.puts(
+          "  #{i}. #{d.drawer} · #{d.date_token} · #{d.slug} (#{d.card_type})"
+        )
+
+        IO.puts("     front: #{d.front}")
+        IO.puts("     back : #{d.back}")
+        IO.puts("     tags : #{inspect(d.tags)}")
+      end)
+
+    {:error, error} ->
+      IO.inspect(error, label: "ERROR", limit: :infinity, printable_limit: :infinity)
+  end
+end
+
+:ok
+```
+
+## Reviewer checklist (per spec §5 Stream C, Gate C.1)
+
+For each fixture above, ask:
+
+- **Card count** — is the number of atomic facts produced appropriate to the source?
+  Too few = the LLM is bundling distinct facts. Too many = it's splitting a single
+  fact into pieces.
+- **Slugs sensible** — do they read as content-relevant tokens? Numeric / letter
+  suffixes (`-2`, `-A`) are a smell (§7.4 style guide).
+- **Dates correct** — does `date_token` match what the text actually says?
+  Hallucinated years are a critical failure mode.
+- **Tags reasonable** — would these tags help group the card in the Reference view?
+  1–4 is the target range.
+- **Entities identified** — does the `entities` list catch named people, places, sources
+  in the back text? Generic nouns should be omitted.
+- **Front / back atomic** — does each card stand alone? Could a reviewer see the
+  card without the conversation context and still understand it?
+
+When all 10 fixtures consistently produce good cards, sign off Gate C.1 in the
+project index and proceed to Gate C.2 (end-to-end async pipeline).
