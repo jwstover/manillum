@@ -450,3 +450,157 @@ For each fixture above, ask:
 
 When all 10 fixtures consistently produce good cards, sign off Gate C.1 in the
 project index and proceed to Gate C.2 (end-to-end async pipeline).
+
+## Gate C.2 — End-to-end Capture → Card flow
+
+Gate C.2 is the slice's end-to-end pipeline gate (per spec §5 Stream C and the
+Gate C.2 review packet on the project index). The cells below mirror the IEx
+verification recipe in the runbook — they exercise:
+
+1. `Manillum.Archive.submit/1` creates a `:pending` capture.
+2. The AshOban scan trigger (`where expr(status == :pending)`) picks it up
+   when drained synchronously via `AshOban.Test.schedule_and_run_triggers/1`.
+3. `RunCataloging` flips status `:pending → :cataloging → :catalogued`,
+   issues an LLM call, and persists draft Cards with `:draft` status +
+   `capture_id` set.
+4. PubSub `:cards_drafted` fires on `"user:#{user_id}:cataloging"`.
+
+> **This hits a real Anthropic call (~$0.001 per run).** No stub here — the
+> Mix standalone runtime boots the full app supervisor (Oban + PubSub
+> included), so the trigger pipeline runs against the dev DB and a live LLM.
+
+### 1. Seed a user, subscribe to the cataloging topic
+
+A fresh email per run avoids tripping the `user_email` identity if the
+notebook is re-run against the same dev DB. Subscribing on `self()` gives
+the next cell's `receive` access to the broadcast.
+
+```elixir
+email = "gate-c2-#{System.system_time(:millisecond)}@example.com"
+user = Ash.Seed.seed!(Manillum.Accounts.User, %{email: email})
+
+topic = "user:#{user.id}:cataloging"
+Phoenix.PubSub.subscribe(Manillum.PubSub, topic)
+
+%{user_id: user.id, email: email, topic: topic}
+```
+
+### 2. Submit a capture (what LiveView `+ FILE` will call)
+
+The §5 Stream C interface line in the spec writes this as
+`Manillum.Archive.create!(:submit, %{...})`; the equivalent code-interface
+call exposed on the `Manillum.Archive` domain is `submit/1`.
+
+```elixir
+{:ok, capture} =
+  Manillum.Archive.submit(%{
+    user_id: user.id,
+    source_text: """
+    Between roughly 1200 and 1150 BCE, the Bronze Age palace economies of
+    the eastern Mediterranean — Mycenaean Greece, Hittite Anatolia, and
+    Ugarit on the Syrian coast — collapsed in close succession. The
+    current consensus blames a "systems collapse" rather than a single
+    cause.
+    """,
+    scope: :whole,
+    conversation_id: Ash.UUID.generate()
+  })
+
+%{id: capture.id, status: capture.status, scope: capture.scope}
+```
+
+### 3. Drive the AshOban scan trigger synchronously
+
+`AshOban.Test.schedule_and_run_triggers/1` schedules the trigger jobs for
+`Manillum.Archive.Capture` and drains the `:cataloging` queue inline,
+returning the Oban drain result. In production the cron tick fires every
+minute; here we drain it on demand.
+
+```elixir
+result = AshOban.Test.schedule_and_run_triggers(Manillum.Archive.Capture)
+```
+
+### 4. Reload — confirm `:pending → :cataloging → :catalogued`
+
+The intermediate `:cataloging` write happens inside `RunCataloging`'s
+`before_action`; by the time the trigger drains, the row is at
+`:catalogued` (or `:failed`). `error_reason` should be `nil` on the
+happy path.
+
+```elixir
+reloaded = Ash.get!(Manillum.Archive.Capture, capture.id, authorize?: false)
+
+%{
+  status: reloaded.status,
+  error_reason: reloaded.error_reason,
+  updated_at: reloaded.updated_at
+}
+```
+
+### 5. List the draft Cards persisted with `capture_id` set
+
+```elixir
+require Ash.Query
+
+cards =
+  Manillum.Archive.Card
+  |> Ash.Query.filter(capture_id == ^capture.id)
+  |> Ash.read!(authorize?: false)
+
+cards
+|> Enum.map(fn card ->
+  %{
+    status: card.status,
+    capture_id: card.capture_id,
+    call_number: "#{card.drawer} · #{card.date_token} · #{card.slug}",
+    front: card.front
+  }
+end)
+```
+
+### 6. Receive the `:cards_drafted` broadcast
+
+`schedule_and_run_triggers/1` is synchronous, so the broadcast has
+already fired by the time we get here. A short timeout covers any tiny
+PubSub delivery latency.
+
+```elixir
+receive do
+  {:cards_drafted, payload} ->
+    IO.puts("✓ :cards_drafted received")
+    IO.inspect(payload, label: "payload")
+    {:received, payload}
+
+  {:cards_drafting_failed, payload} ->
+    IO.puts("✗ :cards_drafting_failed — pipeline error path was hit")
+    IO.inspect(payload, label: "failure")
+    {:failed, payload}
+after
+  500 ->
+    IO.puts("✗ no broadcast within 500ms — pipeline did not reach the broadcast step")
+    :timeout
+end
+```
+
+### 7. Gate C.2 sign-off checklist
+
+For each cell above, confirm:
+
+- **§ 2** — `submit/1` returned `{:ok, %Capture{status: :pending}}`.
+- **§ 3** — `schedule_and_run_triggers/1` reported `success: 1` (or more)
+  with no failures / discards.
+- **§ 4** — the reloaded capture's `status` is `:catalogued` and
+  `error_reason` is `nil` (happy path) — or `:catalogued` with a
+  `"collisions or create errors"` note if any per-draft skips fired.
+- **§ 5** — at least one persisted Card with `status: :draft` and
+  `capture_id` matching the submitted capture.
+- **§ 6** — `{:cards_drafted, payload}` arrived with the expected
+  `capture_id`, `conversation_id`, and a non-empty `draft_ids` list.
+
+When all five pass, sign off Gate C.2 on the project index and merge
+the slice. The slug-collision skip path and `:cards_drafting_failed`
+broadcast are already exercised by the test suite
+(`test/manillum/archive/capture_test.exs`); re-running them here is
+optional — pre-seed a colliding `Card` (same `user_id / drawer /
+date_token / slug` as the LLM will produce) and observe `error_reason`
+populate while no new draft persists.
