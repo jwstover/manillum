@@ -1,0 +1,136 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   .card — the recto/verso index card. The signature surface of Manillum.
+   Two faces, slightly tilted (~1° each, opposite directions) for a
+   physical-paper feel. Recto carries the question in Spectral display;
+   verso carries the answer in Newsreader body with an oxblood drop-cap.
+   The top edge is a 3px oxblood rule — the colored band that distinguishes
+   a Manillum card from any plain content block.
+
+   Variants:
+     .card--recto       front face, Spectral question
+     .card--verso       back face, Newsreader answer
+     .card--draft       drafting state — paler, no tilt, top rule
+                        is half-strength oxblood (a draft hasn't earned
+                        a full red band yet)
+     .card--preview     bigger inner padding for the File-a-card preview
+     .card--list        list-grid variant (no tilt, no shadow)
+                        used in the timeline / drawer browse
+   ───────────────────────────────────────────────────────────────────── */
+
+.card {
+  background: var(--color-paper-light);
+  border: var(--card-border-side) solid var(--color-rule-strong);
+  border-top: var(--card-border-top) solid var(--color-oxblood);
+  padding: 1.25rem 1.375rem 2.25rem;
+  position: relative;
+  box-shadow: var(--card-shadow);
+  font-family: var(--font-body);
+  color: var(--color-ink);
+  min-height: 12.5rem;
+}
+
+.card--recto {
+  transform: rotate(var(--card-tilt-recto));
+}
+
+.card--verso {
+  transform: rotate(var(--card-tilt-verso));
+  background: var(--color-paper-deep);
+  border-top-color: var(--color-rule-strong);
+}
+
+.card--draft {
+  transform: none;
+  box-shadow: none;
+  padding: 0.6875rem 0.8125rem 0.5625rem;
+  min-height: 0;
+  border-top-color: rgba(94, 26, 26, 0.3);
+}
+
+.card--preview {
+  padding: 1.25rem 1.375rem 1rem;
+}
+
+.card--list {
+  transform: none;
+  box-shadow: none;
+  padding: 0.875rem 1rem 0.75rem;
+  min-height: 8.125rem;
+  background: var(--color-paper);
+  border-top: var(--card-border-side) solid var(--color-rule-strong);
+  border-left: var(--card-border-top) solid var(--card-tint, var(--color-oxblood-bright));
+}
+
+.card__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.card__question {
+  font-family: var(--font-display);
+  font-size: 1.1875rem;
+  font-weight: 500;
+  line-height: var(--leading-tight);
+  color: var(--color-ink);
+}
+
+.card__answer {
+  font-family: var(--font-body);
+  font-size: var(--text-body-md);
+  line-height: 1.55;
+  color: var(--color-ink);
+}
+
+.card__answer .drop_cap {
+  /* Drop-cap inside a verso card sits a hair lower */
+  margin-top: 0.1875rem;
+}
+
+.card__foot {
+  position: absolute;
+  bottom: 0.625rem;
+  left: 1.375rem;
+  right: 1.375rem;
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 0.59375rem;
+  color: var(--color-ink-faint);
+  letter-spacing: var(--tracking-mono);
+  text-transform: uppercase;
+}
+
+/* List-card overrides — no absolute foot, baseline meta on top */
+.card--list .card__head {
+  margin-bottom: 0.625rem;
+}
+
+.card--list .card__year {
+  font-family: var(--font-display);
+  font-size: 1.375rem;
+  font-weight: 600;
+  color: var(--card-tint, var(--color-oxblood-bright));
+  line-height: 1;
+  letter-spacing: -0.01em;
+}
+
+.card--list .card__question {
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+.card--list .card__foot {
+  position: relative;
+  bottom: auto;
+  left: auto;
+  right: auto;
+  margin-top: 0.625rem;
+  font-family: var(--font-body);
+  font-style: italic;
+  font-size: 0.71875rem;
+  text-transform: none;
+  letter-spacing: 0;
+}

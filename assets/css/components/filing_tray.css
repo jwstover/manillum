@@ -1,0 +1,126 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   .filing_tray — the right-side drawer that slides in while cataloging is
+   running. Two states:
+     • drafting (slim, ~240px wide, paper-deep ground, skeleton cards)
+     • review  (expanded ~380px, oxblood "FILE ALL" header, draft cards)
+
+   The tray is anchored to the right edge of the page; its left edge has a
+   subtle inset shadow to suggest it sits "on top" of the page.
+   ───────────────────────────────────────────────────────────────────── */
+
+.filing_tray {
+  background: var(--color-paper-deep);
+  border-left: 1px solid var(--color-rule-strong);
+  box-shadow: -8px 0 22px rgba(40, 32, 18, 0.05);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.filing_tray--review {
+  box-shadow: -8px 0 22px rgba(40, 32, 18, 0.10);
+  width: 24rem;
+}
+
+.filing_tray--draft {
+  width: 15rem;
+}
+
+.filing_tray__head {
+  padding: 1rem 1.25rem 0.75rem;
+  border-bottom: 1px solid var(--color-rule);
+  background: var(--color-paper);
+}
+
+.filing_tray__kicker {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 0.25rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-xs);
+  letter-spacing: var(--tracking-mono-extra);
+  color: var(--color-oxblood);
+  text-transform: uppercase;
+}
+
+.filing_tray__kicker .filing_tray__close {
+  color: var(--color-ink-faint);
+  letter-spacing: var(--tracking-mono);
+  text-transform: none;
+  background: transparent;
+  border: 0;
+  font-family: inherit;
+  font-size: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0;
+}
+
+.filing_tray__close:hover {
+  color: var(--color-ink);
+}
+
+.filing_tray__close [class^="hero-"] {
+  width: 0.75rem;
+  height: 0.75rem;
+}
+
+.filing_tray__title {
+  font-family: var(--font-display);
+  font-size: 1.0625rem;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--color-ink);
+  margin-top: 0.125rem;
+}
+
+.filing_tray__sub {
+  font-family: var(--font-body);
+  font-style: italic;
+  font-size: 0.71875rem;
+  color: var(--color-ink-faint);
+  margin-top: 0.125rem;
+  line-height: 1.45;
+}
+
+.filing_tray__actions {
+  display: flex;
+  gap: 0.375rem;
+  margin-top: 0.5rem;
+  align-items: center;
+}
+
+.filing_tray__body {
+  flex: 1;
+  padding: 0.875rem;
+  overflow-y: auto;
+}
+
+/* Skeleton draft block — uses .card--draft, but the loading bars live here
+   because they're skeleton-specific, not card-specific. */
+.skeleton_bar {
+  height: 0.4375rem;
+  background: var(--color-rule-faint);
+  margin-bottom: 0.3125rem;
+}
+
+.skeleton_bar--80 { width: 80%; }
+.skeleton_bar--95 { width: 95%; }
+.skeleton_bar--60 { width: 60%; }
+
+@keyframes manillum_pulse {
+  0%, 100% { opacity: 0.6; }
+  50%      { opacity: 1; }
+}
+
+.cataloging_indicator {
+  font-family: var(--font-body);
+  font-style: italic;
+  font-size: 0.6875rem;
+  color: var(--color-brass);
+  margin-top: 0.25rem;
+  animation: manillum_pulse 1.5s ease-in-out infinite;
+}

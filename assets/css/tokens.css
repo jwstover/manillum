@@ -1,0 +1,147 @@
+/* ───────────────────────────────────────────────────────────────────────────
+   tokens.css — Manillum design tokens
+   The single source of truth for the Manillum aesthetic. Defines a Tailwind 4
+   `@theme` block so tokens are reachable both as Tailwind utilities (e.g.
+   `bg-linen`, `text-oxblood`, `font-display`) and as CSS custom properties
+   for the hand-written components in `./components/*.css`.
+
+   Discipline: this file holds *tokens*, not styles. Anything that smells
+   like a component (boxes, recto/verso layout, stamp tilts, drop-cap rules)
+   belongs in `./components/<name>.css`. Anything that's plain layout
+   (flex, gap, padding) stays as Tailwind utilities at the call site.
+   ─────────────────────────────────────────────────────────────────────── */
+
+@theme {
+  /* ── Palette ─────────────────────────────────────────────────────────
+     Linen ground, ivory paper, ink + oxblood + forest + brass. Lifted
+     from the Codex direction (the user's chosen aesthetic). All values
+     are concrete hex / rgba — DaisyUI's oklch theme tokens stack on top.
+     ─────────────────────────────────────────────────────────────────── */
+  --color-linen: #e8e3d6;
+  --color-linen-deep: #ddd6c2;
+  --color-paper: #f6f1e3;
+  --color-paper-deep: #efe7d2;
+  --color-paper-light: #faf6e8;
+  --color-ink: #1a1814;
+  --color-ink-soft: #4a463c;
+  --color-ink-faint: #7d7666;
+  --color-oxblood: #5e1a1a;
+  --color-oxblood-soft: #8a3a2c;
+  --color-forest: #3a4a2c;
+  --color-brass: #9a7a3a;
+
+  /* ── Bright accent variants ─────────────────────────────────────────
+     The deep oxblood/forest/brass above are tuned for *large* surfaces
+     where the muted register reads scholarly: drop-caps, body em, the
+     3px card top-rule, the call-number box. At small sizes (timeline
+     dots, drawer-label bullets, 1px tag borders, list-card 3px left
+     bars) they collapse into "dark warm thing" — chroma can't carry.
+     The bright variants below have higher OKLCH chroma + lightness so
+     they read distinctly at <12px while still feeling library-warm.
+     Discipline: use bright for small visual markers (dots, bullets,
+     thin borders); use deep for type, drop-caps, large color fields.
+     ─────────────────────────────────────────────────────────────── */
+  --color-oxblood-bright: #a4332c;         /* small-accent oxblood     */
+  --color-forest-bright: #6b853f;          /* small-accent forest      */
+  --color-brass-bright: #b8893a;           /* small-accent brass       */
+
+  /* Translucent rules — for hairline dividers that catch the linen ground.
+     Keep these as rgba so they tint with the bg, not as solid greys. */
+  --color-rule: rgba(40, 32, 18, 0.22);
+  --color-rule-strong: rgba(40, 32, 18, 0.42);
+  --color-rule-faint: rgba(40, 32, 18, 0.10);
+
+  /* No per-drawer palette: the call number's first segment ("ANT", "REN",
+     "MID"…) already disambiguates which drawer a card belongs to, so
+     adding eight unique hues just adds visual noise without adding signal.
+     Drawer-tinted surfaces (.drawer_label bullet, .card--list left bar)
+     fall back to --color-oxblood-bright. Components still expose a `tint`
+     attr if a specific surface ever needs override. */
+
+  /* ── Typography ──────────────────────────────────────────────────────
+     Three faces. Spectral for display + drop-caps. Newsreader for body
+     and italic asides. IBM Plex Mono for metadata, call numbers, stamps.
+     EB Garamond / Georgia / ui-monospace as graceful fallbacks.
+     ─────────────────────────────────────────────────────────────────── */
+  --font-display: "Spectral", "EB Garamond", Garamond, serif;
+  --font-body: "Newsreader", Georgia, serif;
+  --font-mono: "IBM Plex Mono", "JetBrains Mono", ui-monospace, monospace;
+
+  /* Editorial display sizes — the dramatic ones. Used on Today's lead,
+     section headers, the recto question on review cards. */
+  --text-display-xs: 1.0625rem;            /* 17px — sidebar items     */
+  --text-display-sm: 1.375rem;             /* 22px — wordmark, kicker  */
+  --text-display-md: 1.625rem;             /* 26px — page title        */
+  --text-display-lg: 2rem;                 /* 32px — collection title  */
+  --text-display-xl: 2.625rem;             /* 42px — review recto      */
+  --text-display-2xl: 3.125rem;            /* 50px — Today's lead      */
+
+  /* Mono / metadata — small, tight, uppercase, generous tracking. The
+     letter-spacing is the *defining* feature of Manillum's metadata.  */
+  --text-mono-2xs: 0.5625rem;              /*  9px — provenance stamps */
+  --text-mono-xs: 0.625rem;                /* 10px — page meta, kicker */
+  --text-mono-sm: 0.6875rem;               /* 11px — drawer label      */
+  --text-mono-md: 0.75rem;                 /* 12px — call numbers      */
+
+  --tracking-mono-tight: 0.06em;
+  --tracking-mono: 0.14em;
+  --tracking-mono-wide: 0.18em;
+  --tracking-mono-extra: 0.22em;
+  --tracking-mono-display: 0.30em;         /* on-this-day kicker       */
+
+  /* ── Body & rule scales ─────────────────────────────────────────── */
+  --text-body-sm: 0.78125rem;              /* 12.5px — caption italic  */
+  --text-body-md: 0.875rem;                /* 14px — body              */
+  --text-body-lg: 0.96875rem;              /* 15.5px — Q-as-italic     */
+  --text-body-xl: 1.0625rem;               /* 17px — review verso      */
+
+  --leading-body: 1.65;
+  --leading-tight: 1.25;
+  --leading-cap: 0.85;                     /* drop-cap line-height     */
+
+  /* ── Manuscript margins ──────────────────────────────────────────────
+     The page gets generous side margins so headings and body have a
+     scholarly columnar feel, not a webby edge-to-edge feel. The gutter
+     is the narrow column on the left of paragraphs that holds the ¶
+     index and hover-revealed FILE marks (see .gutter_action).
+     ─────────────────────────────────────────────────────────────────── */
+  --margin-page-x: 2rem;                   /* 32px — outer margin      */
+  --margin-page-y: 1.25rem;                /* 20px — outer margin      */
+  --gutter-w: 3.5rem;                      /* 56px — paragraph margin  */
+  --gutter-pad: 0.875rem;                  /* 14px — gutter→body gap   */
+
+  /* ── Card geometry — recto/verso ─────────────────────────────────── */
+  --card-tilt-recto: -1.2deg;
+  --card-tilt-verso: 0.8deg;
+  --card-shadow: 0 10px 24px rgba(40, 32, 18, 0.10);
+  --card-shadow-lifted: 0 12px 28px rgba(40, 32, 18, 0.18);
+  --card-border-top: 3px;                  /* oxblood top edge         */
+  --card-border-side: 1px;                 /* rule-strong              */
+
+  /* ── Stamp sticker geometry ──────────────────────────────────────── */
+  --stamp-tilt: 8deg;
+  --stamp-size: 3.25rem;                   /* 52px square              */
+
+  /* ── Misc ────────────────────────────────────────────────────────── */
+  --bg-page-grain: repeating-linear-gradient(
+    0deg,
+    rgba(40, 32, 18, 0.018) 0 1px,
+    transparent 1px 5px
+  );
+
+  /* DaisyUI bridge — the few semantic slots we *do* want DaisyUI to use
+     for forms, modals, and dropdowns. Mapped to Manillum tokens so the
+     prebuilt AshAuth Phoenix UI inherits the linen aesthetic. */
+  --color-base-100: #f6f1e3;               /* paper                    */
+  --color-base-200: #e8e3d6;               /* linen                    */
+  --color-base-300: #ddd6c2;               /* linen-deep               */
+  --color-base-content: #1a1814;           /* ink                      */
+  --color-primary: #5e1a1a;                /* oxblood                  */
+  --color-primary-content: #faf6e8;        /* paper-light              */
+  --color-secondary: #3a4a2c;              /* forest                   */
+  --color-secondary-content: #faf6e8;
+  --color-accent: #9a7a3a;                 /* brass                    */
+  --color-accent-content: #1a1814;
+  --color-neutral: #4a463c;                /* ink-soft                 */
+  --color-neutral-content: #faf6e8;
+}

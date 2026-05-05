@@ -32,52 +32,106 @@ defmodule ManillumWeb.CoreComponents do
   alias Phoenix.LiveView.JS
 
   @doc """
-  Renders flash notices.
+  Renders flash notices using Manillum's `.toast` design.
+
+  Flash values may be either a plain string (rendered as the body) or a map
+  carrying any of `:title`, `:body`, `:kicker`. The toast variant follows the
+  flash key (`:info | :ok | :warn | :error`) unless the `kind` attribute or
+  the value's `:kind` overrides it.
 
   ## Examples
 
+      # plain string — kind comes from the flash key
+      put_flash(socket, :info, "Welcome back")
+
+      # structured — title + body + custom kicker
+      put_flash(socket, :ok, %{
+        kicker: "● FILED",
+        title: "3 cards filed in Dr. 01 Antiquity",
+        body: "From QRY № 0089. Each card is independently scheduled for review."
+      })
+
       <.flash kind={:info} flash={@flash} />
-      <.flash kind={:info} phx-mounted={show("#flash")}>Welcome Back!</.flash>
+      <.flash kind={:info} title="Welcome back" phx-mounted={show("#flash")}>Glad to see you</.flash>
   """
   attr :id, :string, doc: "the optional id of flash container"
   attr :flash, :map, default: %{}, doc: "the map of flash messages to display"
   attr :title, :string, default: nil
-  attr :kind, :atom, values: [:info, :error], doc: "used for styling and flash lookup"
+  attr :kicker, :string, default: nil
+
+  attr :kind, :atom,
+    values: [:info, :ok, :warn, :error],
+    doc: "used for styling and flash lookup"
+
   attr :rest, :global, doc: "the arbitrary HTML attributes to add to the flash container"
 
   slot :inner_block, doc: "the optional inner block that renders the flash message"
 
   def flash(assigns) do
-    assigns = assign_new(assigns, :id, fn -> "flash-#{assigns.kind}" end)
+    payload = decode_flash(Phoenix.Flash.get(assigns.flash, assigns.kind))
+
+    resolved_kind = (payload && payload[:kind]) || assigns.kind
+
+    resolved_kicker =
+      (payload && payload[:kicker]) || assigns.kicker || flash_kicker(resolved_kind)
+
+    assigns =
+      assigns
+      |> assign_new(:id, fn -> "flash-#{assigns.kind}" end)
+      |> assign(:payload, payload)
+      |> assign(:resolved_kind, resolved_kind)
+      |> assign(:resolved_kicker, resolved_kicker)
+      |> assign(:resolved_title, (payload && payload[:title]) || assigns.title)
+      |> assign(:flash_body, payload && payload[:body])
 
     ~H"""
     <div
-      :if={msg = render_slot(@inner_block) || Phoenix.Flash.get(@flash, @kind)}
+      :if={@payload || @inner_block != []}
       id={@id}
       phx-click={JS.push("lv:clear-flash", value: %{key: @kind}) |> hide("##{@id}")}
       role="alert"
-      class="toast toast-top toast-end z-50"
+      class={["toast", "toast--#{@resolved_kind}"]}
       {@rest}
     >
-      <div class={[
-        "alert w-80 sm:w-96 max-w-80 sm:max-w-96 text-wrap",
-        @kind == :info && "alert-info",
-        @kind == :error && "alert-error"
-      ]}>
-        <.icon :if={@kind == :info} name="hero-information-circle" class="size-5 shrink-0" />
-        <.icon :if={@kind == :error} name="hero-exclamation-circle" class="size-5 shrink-0" />
-        <div>
-          <p :if={@title} class="font-semibold">{@title}</p>
-          <p>{msg}</p>
-        </div>
-        <div class="flex-1" />
-        <button type="button" class="group self-start cursor-pointer" aria-label={gettext("close")}>
-          <.icon name="hero-x-mark" class="size-5 opacity-40 group-hover:opacity-70" />
-        </button>
+      <div :if={@resolved_kicker} class="toast__kicker">{@resolved_kicker}</div>
+      <div :if={@resolved_title} class="toast__title">{@resolved_title}</div>
+      <div :if={@flash_body || @inner_block != []} class="toast__body">
+        <%= if @flash_body do %>
+          {@flash_body}
+        <% else %>
+          {render_slot(@inner_block)}
+        <% end %>
       </div>
+      <button
+        type="button"
+        class="toast__close"
+        aria-label={gettext("close")}
+        phx-click={JS.push("lv:clear-flash", value: %{key: @kind}) |> hide("##{@id}")}
+      >
+        ×
+      </button>
     </div>
     """
   end
+
+  defp decode_flash(nil), do: nil
+  defp decode_flash(""), do: nil
+  defp decode_flash(text) when is_binary(text), do: %{body: text}
+
+  defp decode_flash(%{} = map) do
+    %{
+      kind: map[:kind] || map["kind"],
+      title: map[:title] || map["title"],
+      body: map[:body] || map["body"] || map[:message] || map["message"],
+      kicker: map[:kicker] || map["kicker"]
+    }
+  end
+
+  defp flash_kicker(:info), do: "● NOTICE"
+  defp flash_kicker(:ok), do: "● FILED"
+  defp flash_kicker(:warn), do: "● NOTICE"
+  defp flash_kicker(:error), do: "● ERROR"
+  defp flash_kicker(_), do: nil
 
   @doc """
   Renders a button with navigation support.

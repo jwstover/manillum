@@ -1,0 +1,52 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   .tag — cross-reference tag. Newsreader 12.5px, thin solid border in the
+   tag's tint colour, almost-transparent ink fill. Tints come from the
+   drawer-color palette. The "+ tag" affordance shares the family with a
+   dashed brass border + italic.
+   ───────────────────────────────────────────────────────────────────── */
+
+.tag {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.25rem;
+  padding: 0.1875rem 0.5625rem;
+  font-family: var(--font-body);
+  font-size: 0.78125rem;
+  border: 1px solid var(--tag-tint, var(--color-ink-soft));
+  color: var(--tag-tint, var(--color-ink-soft));
+  background: rgba(40, 32, 18, 0.04);
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: default;
+}
+
+.tag--remove::after {
+  content: "×";
+  font-family: var(--font-mono);
+  margin-left: 0.25rem;
+  opacity: 0.6;
+}
+
+.tag--add {
+  border-style: dashed;
+  border-color: var(--color-brass);
+  color: var(--color-brass);
+  background: transparent;
+  font-style: italic;
+  cursor: pointer;
+}
+
+.tag--small {
+  font-size: 0.65625rem;
+  padding: 0.0625rem 0.375rem;
+  border-color: var(--color-rule);
+  color: var(--color-ink-soft);
+  background: transparent;
+}
+
+/* horizontal cluster wrapper — handles row wrapping with consistent gap */
+.tag_cluster {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}

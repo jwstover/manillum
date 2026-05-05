@@ -84,8 +84,10 @@ defmodule ManillumWeb do
 
       # HTML escaping functionality
       import Phoenix.HTML
-      # Core UI components
+      # Core UI components (DaisyUI / Tailwind defaults — forms, flash, modals)
       import ManillumWeb.CoreComponents
+      # Manillum design system components (linen / oxblood / Spectral)
+      import ManillumWeb.ManillumComponents
 
       # Common modules used in templates
       alias Phoenix.LiveView.JS
