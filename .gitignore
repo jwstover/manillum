@@ -41,3 +41,6 @@ npm-debug.log
 /.env.local
 
 .claude/
+
+/.playwright-cli
+/.vscode
