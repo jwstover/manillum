@@ -168,6 +168,12 @@ defmodule Manillum.Archive.Card do
     belongs_to :capture, Manillum.Archive.Capture do
       public? true
     end
+
+    many_to_many :tags, Manillum.Archive.Tag do
+      through Manillum.Archive.CardTag
+      source_attribute_on_join_resource :card_id
+      destination_attribute_on_join_resource :tag_id
+    end
   end
 
   calculations do

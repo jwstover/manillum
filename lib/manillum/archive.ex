@@ -31,5 +31,14 @@ defmodule Manillum.Archive do
       # iteration and for tests. Bypasses Oban + DB entirely.
       define :extract_drafts, action: :extract_drafts, args: [:source_text]
     end
+
+    resource Manillum.Archive.Tag do
+      define :find_or_create_tag, action: :find_or_create, args: [:user_id, :name]
+    end
+
+    resource Manillum.Archive.CardTag do
+      define :tag_card, action: :tag_card, args: [:card_id, :tag_id]
+      define :untag_card, action: :destroy
+    end
   end
 end
