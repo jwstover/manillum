@@ -174,6 +174,14 @@ defmodule Manillum.Archive.Card do
       source_attribute_on_join_resource :card_id
       destination_attribute_on_join_resource :tag_id
     end
+
+    has_many :outgoing_links, Manillum.Archive.Link do
+      destination_attribute :from_card_id
+    end
+
+    has_many :incoming_links, Manillum.Archive.Link do
+      destination_attribute :to_card_id
+    end
   end
 
   calculations do

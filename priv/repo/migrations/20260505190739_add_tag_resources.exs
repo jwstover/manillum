@@ -28,7 +28,8 @@ defmodule Manillum.Repo.Migrations.AddTagResources do
             type: :uuid,
             prefix: "public",
             on_delete: :delete_all
-          ), null: false
+          ),
+          null: false
     end
 
     create unique_index(:tags, [:user_id, :normalized_name],
@@ -53,7 +54,8 @@ defmodule Manillum.Repo.Migrations.AddTagResources do
             type: :uuid,
             prefix: "public",
             on_delete: :delete_all
-          ), null: false
+          ),
+          null: false
 
       add :tag_id,
           references(:tags,
@@ -62,7 +64,8 @@ defmodule Manillum.Repo.Migrations.AddTagResources do
             type: :uuid,
             prefix: "public",
             on_delete: :delete_all
-          ), null: false
+          ),
+          null: false
     end
 
     create unique_index(:card_tags, [:card_id, :tag_id], name: "card_tags_unique_card_tag_index")

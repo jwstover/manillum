@@ -40,5 +40,10 @@ defmodule Manillum.Archive do
       define :tag_card, action: :tag_card, args: [:card_id, :tag_id]
       define :untag_card, action: :destroy
     end
+
+    resource Manillum.Archive.Link do
+      define :link, action: :link
+      define :unlink, action: :destroy
+    end
   end
 end
