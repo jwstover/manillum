@@ -1,4 +1,5 @@
 import Config
+config :req_llm, anthropic_api_key: System.get_env("ANTHROPIC_API_KEY")
 
 # config/runtime.exs is executed for all environments, including
 # during releases. It is executed after compilation and before the

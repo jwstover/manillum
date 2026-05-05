@@ -12,7 +12,7 @@ config :ash_oban, pro?: false
 config :manillum, Oban,
   engine: Oban.Engines.Basic,
   notifier: Oban.Notifiers.Postgres,
-  queues: [default: 10, cataloging: 5],
+  queues: [default: 10, cataloging: 5, chat_responses: [limit: 10], conversations: [limit: 10]],
   repo: Manillum.Repo,
   plugins: [{Oban.Plugins.Cron, []}]
 
@@ -64,7 +64,7 @@ config :spark,
 config :manillum,
   ecto_repos: [Manillum.Repo],
   generators: [timestamp_type: :utc_datetime],
-  ash_domains: [Manillum.Accounts, Manillum.Archive],
+  ash_domains: [Manillum.Conversations, Manillum.Accounts, Manillum.Archive],
   ash_authentication: [return_error_on_invalid_magic_link_token?: true]
 
 # Configure the endpoint
