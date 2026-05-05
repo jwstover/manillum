@@ -1,0 +1,50 @@
+defmodule Manillum.Conversations.Conversation.Changes.GenerateName do
+  use Ash.Resource.Change
+  require Ash.Query
+
+  alias ReqLLM.Context
+
+  @impl true
+  def change(changeset, _opts, context) do
+    Ash.Changeset.before_transaction(changeset, fn changeset ->
+      conversation = changeset.data
+
+      messages =
+        Manillum.Conversations.Message
+        |> Ash.Query.filter(conversation_id == ^conversation.id)
+        |> Ash.Query.limit(10)
+        |> Ash.Query.select([:content, :role])
+        |> Ash.Query.sort(inserted_at: :asc)
+        |> Ash.read!(scope: context)
+
+      prompt_messages =
+        [
+          Context.system("""
+          Provide a short name for the current conversation.
+          2-8 words, preferring more succinct names.
+          RESPOND WITH ONLY THE NEW CONVERSATION NAME.
+          """)
+        ] ++
+          Enum.map(messages, fn message ->
+            if message.role == :assistant do
+              Context.assistant(message.content)
+            else
+              Context.user(message.content)
+            end
+          end)
+
+      ReqLLM.generate_text("anthropic:claude-sonnet-4-5", prompt_messages)
+      |> case do
+        {:ok, response} ->
+          Ash.Changeset.force_change_attribute(
+            changeset,
+            :title,
+            ReqLLM.Response.text(response)
+          )
+
+        {:error, error} ->
+          {:error, error}
+      end
+    end)
+  end
+end
