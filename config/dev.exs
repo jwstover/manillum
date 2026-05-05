@@ -1,6 +1,11 @@
 import Config
 config :ash, policies: [show_policy_breakdowns?: true]
 
+# Allow `mix phx.server` to start even when LiveDebugger's port is taken by a
+# parallel worktree's dev server. Without this, the port collision crashes the
+# whole VM at boot.
+config :live_debugger, ignore_startup_errors: true
+
 # Configure your database
 config :manillum, Manillum.Repo,
   username: "postgres",
