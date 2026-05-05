@@ -4,13 +4,13 @@
 
 Gate B.2 (per spec §5 Stream B) is the slice's review surface for the conflict-resolution
 mechanics that define the product's filing feel: slug collisions, retroactive renames,
-case-insensitive tag matching, directional links, and entity autostubs. The reviewer walks
-each scenario below against a clean dev DB, eyeballs the result, and ticks the sign-off
-checklist at the bottom.
+case-insensitive tag matching, and link semantics (symmetric `:see_also` + directional
+`:references` / `:derived_from`). The reviewer walks each scenario below against a clean
+dev DB, eyeballs the result, and ticks the sign-off checklist at the bottom.
 
 This is the **interactive Gate B.2 surface**. Behavior is also covered in the test suite
-(`test/manillum/archive/{tag,link,rename,autostub}_test.exs`); this notebook is for the
-manual sign-off pass that confirms the API feels right end-to-end.
+(`test/manillum/archive/{tag,link,rename}_test.exs`); this notebook is for the manual
+sign-off pass that confirms the API feels right end-to-end.
 
 ## Connecting
 
@@ -56,7 +56,7 @@ Phoenix.PubSub.subscribe(Manillum.PubSub, archive_topic)
 File a `CAESAR` card; ask `:propose_call_number` for the same segments; confirm the
 returned proposal has `status: :collision` and the existing card's id. Slice 3 covered
 this in tests; we re-verify here as a regression guard now that more actions touch the
-identity (rename, autostub).
+identity (rename).
 
 ```elixir
 {:ok, caesar} =
@@ -252,74 +252,19 @@ Expected: `renamed_slug: "JULIUS-CAESAR"`, `broadcast: {:ok, "ANT · 49BC · CAE
 Expected: `redirect_resolves?: true`, `found_via_old_slug: "JULIUS-CAESAR"`, and the
 returned card's id matches the original `caesar.id` (not `octavian.id`).
 
-## Scenario E — autostub is idempotent and respects existing matches
+## Scenario E — reactive cross-reference linking (deferred)
 
-Against a clean entity space, autostub two names. Re-run the same call and confirm no
-new stubs (idempotency). Then file the Meiji stub (promote draft → filed), delete the
-Iwakura stub, and re-run autostub: only Iwakura should produce a new stub.
+Pre-emptive autostub creation was dropped (see project decision callout, 2026-05-05).
+Cross-reference Links are now created **reactively at file-time**: when a card is filed,
+the system scans both directions — forward (this card's `entities` → existing cards'
+identifying fields → outgoing `:references` links) and backward (this card's slug + front
+→ existing cards' `entities` → incoming links from each match) — using vector similarity
+(M-24's embedding index) plus an LLM filter step to keep only links that are actually
+worth surfacing.
 
-We use a fresh user here so this scenario isn't polluted by the cards seeded in A–D.
-
-```elixir
-autostub_email = "gate-b2-autostub-#{System.system_time(:millisecond)}@example.com"
-autostub_user = Ash.Seed.seed!(Manillum.Accounts.User, %{email: autostub_email})
-
-# Round 1: empty archive
-{:ok, [meiji_id, iwakura_id]} =
-  Manillum.Archive.autostub(autostub_user.id, ["Meiji government", "Iwakura Mission"])
-
-require Ash.Query
-
-stubs_round_1 =
-  Manillum.Archive.Card
-  |> Ash.Query.filter(user_id == ^autostub_user.id)
-  |> Ash.read!(authorize?: false)
-
-%{
-  round_1_count: length(stubs_round_1),
-  round_1_slugs: stubs_round_1 |> Enum.map(& &1.slug) |> Enum.sort(),
-  meiji_id: meiji_id,
-  iwakura_id: iwakura_id
-}
-```
-
-Expected: `round_1_count: 2`, `round_1_slugs: ["IWAKURA-MISSION", "MEIJI-GOVERNMENT"]`.
-
-```elixir
-# Round 2: idempotent re-run
-{:ok, round_2_ids} =
-  Manillum.Archive.autostub(autostub_user.id, ["Meiji government", "Iwakura Mission"])
-
-%{round_2_new_ids: round_2_ids, idempotent?: round_2_ids == []}
-```
-
-Expected: `idempotent?: true`.
-
-```elixir
-# File the Meiji stub (promote :draft → :filed) and delete the Iwakura stub.
-meiji_stub = Ash.get!(Manillum.Archive.Card, meiji_id, authorize?: false)
-{:ok, meiji_filed} = Manillum.Archive.file_card(meiji_stub)
-
-iwakura_stub = Ash.get!(Manillum.Archive.Card, iwakura_id, authorize?: false)
-:ok = Ash.destroy!(iwakura_stub, authorize?: false)
-
-# Round 3: Meiji blocked by the filed real card; Iwakura has no match → only it stubs.
-{:ok, round_3_ids} =
-  Manillum.Archive.autostub(autostub_user.id, ["Meiji government", "Iwakura Mission"])
-
-new_stubs =
-  Manillum.Archive.Card
-  |> Ash.Query.filter(id in ^round_3_ids)
-  |> Ash.read!(authorize?: false)
-
-%{
-  meiji_status: meiji_filed.status,
-  round_3_new_count: length(round_3_ids),
-  round_3_new_slugs: Enum.map(new_stubs, & &1.slug)
-}
-```
-
-Expected: `meiji_status: :filed`, `round_3_new_count: 1`, `round_3_new_slugs: ["IWAKURA-MISSION"]`.
+That work lands in **M-34**, gated on the embedding index from M-24. Until then the
+`Card.entities` attribute is simply a denormalized search/filter list populated by the
+cataloging pipeline; nothing in the running app reads it as a link source yet.
 
 ## Scenario F — semantic dup detection (deferred)
 
@@ -351,12 +296,11 @@ For each scenario above, confirm the expected output landed:
   `{:card_renamed, "ANT · 49BC · CAESAR", "ANT · 49BC · JULIUS-CAESAR"}` broadcast
   arrived; `get_card_by_call_number` follows the redirect from the old name to the
   renamed card; the new `OCTAVIAN` card resolves directly.
-* [ ] **Scenario E** — autostub created two stubs round 1, no new stubs round 2
-  (idempotent); after promoting Meiji to `:filed` and deleting the Iwakura stub,
-  round 3 created exactly one new stub (`IWAKURA-MISSION`).
+* [ ] **Scenario E** — acknowledged as deferred to M-34 (reactive
+  cross-reference linking; depends on M-24).
 * [ ] **Scenario F** — acknowledged as deferred to M-24.
 
-When all five tick, sign off **Gate B.2** on the project index and proceed to M-24
+When all six tick, sign off **Gate B.2** on the project index and proceed to M-24
 (dup-detection follow-on) and M-28 (filing tray + chat-to-card loop).
 
 > **Gate B.2 approved — proceed to M-24 / M-28.** _(reviewer signs above this line)_

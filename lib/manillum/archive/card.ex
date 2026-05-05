@@ -44,7 +44,7 @@ defmodule Manillum.Archive.Card do
         :card_type,
         :front,
         :back,
-        :pending_autostubs
+        :entities
       ]
 
       change set_attribute(:status, :draft)
@@ -92,27 +92,6 @@ defmodule Manillum.Archive.Card do
       require_atomic? false
 
       change Manillum.Archive.Card.Changes.Rename
-    end
-
-    action :autostub, {:array, :uuid} do
-      description """
-      For each entity name in `entities` that doesn't already match an
-      existing card (slug or front, case-insensitive) or tag (name,
-      case-insensitive) for the user, create a `:draft` Card stub with
-      placeholder content. Returns the list of created card ids
-      (entities that matched are silently skipped, making the action
-      idempotent on repeat).
-
-      Stubs use `card_type: :concept`, drawer `:CON`, date_token `"CON"`,
-      front `"Autostub: <name>"`, back `"Stub created during cataloging
-      — needs content."` Slug is the entity name uppercased and
-      hyphen-joined.
-      """
-
-      argument :user_id, :uuid, allow_nil?: false
-      argument :entities, {:array, :string}, default: []
-
-      run Manillum.Archive.Card.Autostub
     end
 
     action :propose_call_number, Manillum.Archive.Card.CallNumberProposal do
@@ -196,16 +175,18 @@ defmodule Manillum.Archive.Card do
       public? true
     end
 
-    attribute :pending_autostubs, {:array, :string} do
+    attribute :entities, {:array, :string} do
       default []
       allow_nil? false
       public? true
 
       description """
-      Entity names extracted by the cataloging pipeline that, at the time
-      this card was drafted, didn't have a matching card or tag. The
-      filing tray (Stream E) and the `:autostub` action consume this
-      list to create reference stubs.
+      Proper-noun mentions extracted from the back text by the cataloging
+      pipeline (named actors, places, sources — excluding the card's own
+      subject). Denormalized search/filter metadata; consumed by the
+      reactive cross-reference scan at file-time. Not link targets — the
+      project deliberately does not create speculative Card stubs from
+      this list.
       """
     end
 

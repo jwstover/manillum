@@ -1,4 +1,4 @@
-defmodule Manillum.Repo.Migrations.AddPendingAutostubsToCards do
+defmodule Manillum.Repo.Migrations.AddEntitiesToCards do
   @moduledoc """
   Updates resources based on their most recent snapshots.
 
@@ -9,13 +9,13 @@ defmodule Manillum.Repo.Migrations.AddPendingAutostubsToCards do
 
   def up do
     alter table(:cards) do
-      add :pending_autostubs, {:array, :text}, null: false, default: []
+      add :entities, {:array, :text}, null: false, default: []
     end
   end
 
   def down do
     alter table(:cards) do
-      remove :pending_autostubs
+      remove :entities
     end
   end
 end

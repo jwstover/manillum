@@ -23,9 +23,10 @@ defmodule Manillum.Archive.Capture.Changes.RunCataloging do
   cosine-similar existing cards via `Archive.find_duplicates/2`) is
   deferred to a follow-on. When that lands, the per-draft step in #3
   gains an embedding + dup-candidate fetch, and the persisted draft
-  carries `duplicate_candidate_ids`. Likewise, entity-autostub and the
-  `:cards_drafted`-with-autostub-flags broadcast wait on Stream B
-  task 5 (`:autostub`).
+  carries `duplicate_candidate_ids`. Reactive cross-reference linking
+  (scan `entities` against the existing archive at file-time, plus
+  vector + LLM filter for relevance) lands in M-34, also gated on the
+  embedding index from the dup-detection slice.
 
   ## Why the change goes through `before_action`
 
@@ -155,7 +156,7 @@ defmodule Manillum.Archive.Capture.Changes.RunCataloging do
       card_type: draft.card_type,
       front: draft.front,
       back: draft.back,
-      pending_autostubs: draft.entities || []
+      entities: draft.entities || []
     }
 
     Card

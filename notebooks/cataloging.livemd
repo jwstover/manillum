@@ -129,9 +129,10 @@ For each atomic fact, produce a Draft Card with these fields:
   `["Bronze Age", "Eastern Mediterranean"]`. Used for grouping in
   the Reference view.
 - **entities**: list of named entities (people, places, sources)
-  mentioned in the **back** text. Used downstream to autostub
-  reference cards. Only include entities that have a name; skip
-  generic nouns.
+  mentioned in the **back** text (excluding the card's own subject).
+  Persisted on the card as denormalized search/filter metadata and
+  consumed by the reactive cross-reference scan at file-time. Only
+  include entities that have a name; skip generic nouns.
 
 ## Output rules
 

@@ -14,8 +14,11 @@ defmodule Manillum.Archive.Cataloging.DraftCard do
     * `drawer` — one of the seven era codes from §7.4
     * `date_token` / `slug` / `front` / `back` — strings per §7.4 / §4
     * `tags` — list of human-readable tag names (e.g. "Bronze Age")
-    * `entities` — list of entity names mentioned in the back text
-      (people / places / sources). The autostub follow-on uses these.
+    * `entities` — list of proper-noun mentions in the back text
+      (people / places / sources, excluding the card's own subject).
+      Persisted on `Card.entities` as denormalized search/filter
+      metadata and consumed by the reactive cross-reference scan
+      (M-34) at file-time.
 
   See spec §7.1 for the contract surface this mirrors and §5 Stream C for
   how it slots into the pipeline.
