@@ -64,7 +64,7 @@ config :spark,
 config :manillum,
   ecto_repos: [Manillum.Repo],
   generators: [timestamp_type: :utc_datetime],
-  ash_domains: [Manillum.Accounts],
+  ash_domains: [Manillum.Accounts, Manillum.Archive],
   ash_authentication: [return_error_on_invalid_magic_link_token?: true]
 
 # Configure the endpoint
