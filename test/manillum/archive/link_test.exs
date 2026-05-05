@@ -59,7 +59,7 @@ defmodule Manillum.Archive.LinkTest do
     end
   end
 
-  describe ":link action" do
+  describe ":link action (directional kinds)" do
     setup do
       user = make_user("link_test@example.com")
       from_card = seed_card(user, "FROM-CARD")
@@ -69,16 +69,19 @@ defmodule Manillum.Archive.LinkTest do
 
     test "creates a directed edge with the requested kind", %{from: from, to: to} do
       assert {:ok, link} =
-               Archive.link(%{from_card_id: from.id, to_card_id: to.id, kind: :see_also})
+               Archive.link(%{from_card_id: from.id, to_card_id: to.id, kind: :references})
 
       assert link.from_card_id == from.id
       assert link.to_card_id == to.id
-      assert link.kind == :see_also
+      assert link.kind == :references
     end
 
     test "is idempotent on the same (from, to, kind) triple", %{from: from, to: to} do
-      assert {:ok, _} = Archive.link(%{from_card_id: from.id, to_card_id: to.id, kind: :see_also})
-      assert {:ok, _} = Archive.link(%{from_card_id: from.id, to_card_id: to.id, kind: :see_also})
+      assert {:ok, _} =
+               Archive.link(%{from_card_id: from.id, to_card_id: to.id, kind: :references})
+
+      assert {:ok, _} =
+               Archive.link(%{from_card_id: from.id, to_card_id: to.id, kind: :references})
 
       links =
         Link
@@ -90,7 +93,7 @@ defmodule Manillum.Archive.LinkTest do
 
     test "different kinds between the same pair coexist", %{from: from, to: to} do
       assert {:ok, l1} =
-               Archive.link(%{from_card_id: from.id, to_card_id: to.id, kind: :see_also})
+               Archive.link(%{from_card_id: from.id, to_card_id: to.id, kind: :derived_from})
 
       assert {:ok, l2} =
                Archive.link(%{from_card_id: from.id, to_card_id: to.id, kind: :references})
@@ -98,8 +101,9 @@ defmodule Manillum.Archive.LinkTest do
       refute l1.id == l2.id
     end
 
-    test "directed: A→B does not imply B→A", %{from: from, to: to} do
-      assert {:ok, _} = Archive.link(%{from_card_id: from.id, to_card_id: to.id, kind: :see_also})
+    test "A→B does not imply B→A for directional kinds", %{from: from, to: to} do
+      assert {:ok, _} =
+               Archive.link(%{from_card_id: from.id, to_card_id: to.id, kind: :derived_from})
 
       reverse =
         Link
@@ -130,18 +134,77 @@ defmodule Manillum.Archive.LinkTest do
 
     test "outgoing_links / incoming_links navigate the edge from each side",
          %{from: from, to: to} do
-      assert {:ok, _} = Archive.link(%{from_card_id: from.id, to_card_id: to.id, kind: :see_also})
+      assert {:ok, _} =
+               Archive.link(%{from_card_id: from.id, to_card_id: to.id, kind: :references})
 
       from_loaded = Ash.load!(from, [:outgoing_links, :incoming_links])
       to_loaded = Ash.load!(to, [:outgoing_links, :incoming_links])
 
-      assert [%Link{kind: :see_also, to_card_id: to_id}] = from_loaded.outgoing_links
+      assert [%Link{kind: :references, to_card_id: to_id}] = from_loaded.outgoing_links
       assert to_id == to.id
       assert from_loaded.incoming_links == []
 
       assert to_loaded.outgoing_links == []
-      assert [%Link{kind: :see_also, from_card_id: from_id}] = to_loaded.incoming_links
+      assert [%Link{kind: :references, from_card_id: from_id}] = to_loaded.incoming_links
       assert from_id == from.id
+    end
+  end
+
+  describe ":see_also is symmetric" do
+    setup do
+      user = make_user("see_also_test@example.com")
+      a = seed_card(user, "SEE-ALSO-A")
+      b = seed_card(user, "SEE-ALSO-B")
+      {:ok, user: user, a: a, b: b}
+    end
+
+    test "A→B and B→A collapse onto a single row", %{a: a, b: b} do
+      assert {:ok, l1} = Archive.link(%{from_card_id: a.id, to_card_id: b.id, kind: :see_also})
+      assert {:ok, l2} = Archive.link(%{from_card_id: b.id, to_card_id: a.id, kind: :see_also})
+
+      assert l1.id == l2.id
+
+      links =
+        Link
+        |> Ash.Query.filter(
+          kind == :see_also and
+            ((from_card_id == ^a.id and to_card_id == ^b.id) or
+               (from_card_id == ^b.id and to_card_id == ^a.id))
+        )
+        |> Ash.read!(authorize?: false)
+
+      assert length(links) == 1
+    end
+
+    test "stored row places the smaller UUID as from_card_id", %{a: a, b: b} do
+      {:ok, _} = Archive.link(%{from_card_id: a.id, to_card_id: b.id, kind: :see_also})
+
+      [link] = Ash.read!(Link, authorize?: false)
+      assert link.from_card_id == min(a.id, b.id)
+      assert link.to_card_id == max(a.id, b.id)
+    end
+
+    test "see_also_partner_ids/1 surfaces the partner regardless of side", %{a: a, b: b} do
+      {:ok, _} = Archive.link(%{from_card_id: a.id, to_card_id: b.id, kind: :see_also})
+
+      assert Archive.see_also_partner_ids(a.id) == [b.id]
+      assert Archive.see_also_partner_ids(b.id) == [a.id]
+    end
+
+    test "see_also_partner_ids/1 ignores directional kinds", %{a: a, b: b} do
+      {:ok, _} = Archive.link(%{from_card_id: a.id, to_card_id: b.id, kind: :derived_from})
+      {:ok, _} = Archive.link(%{from_card_id: a.id, to_card_id: b.id, kind: :references})
+
+      assert Archive.see_also_partner_ids(a.id) == []
+      assert Archive.see_also_partner_ids(b.id) == []
+    end
+
+    test "see_also coexists with directional kinds between the same pair", %{a: a, b: b} do
+      {:ok, _} = Archive.link(%{from_card_id: a.id, to_card_id: b.id, kind: :see_also})
+      {:ok, _} = Archive.link(%{from_card_id: a.id, to_card_id: b.id, kind: :derived_from})
+
+      assert length(Ash.read!(Link, authorize?: false)) == 2
+      assert Archive.see_also_partner_ids(a.id) == [b.id]
     end
   end
 
@@ -151,7 +214,7 @@ defmodule Manillum.Archive.LinkTest do
       from = seed_card(user, "U-FROM")
       to = seed_card(user, "U-TO")
 
-      {:ok, link} = Archive.link(%{from_card_id: from.id, to_card_id: to.id, kind: :see_also})
+      {:ok, link} = Archive.link(%{from_card_id: from.id, to_card_id: to.id, kind: :references})
       {:ok, link: link, from: from, to: to}
     end
 
@@ -173,19 +236,19 @@ defmodule Manillum.Archive.LinkTest do
       a = seed_card(user, "FILTER-A")
       b = seed_card(user, "FILTER-B")
 
-      {:ok, _} = Archive.link(%{from_card_id: a.id, to_card_id: b.id, kind: :see_also})
+      {:ok, _} = Archive.link(%{from_card_id: a.id, to_card_id: b.id, kind: :references})
       {:ok, _} = Archive.link(%{from_card_id: a.id, to_card_id: b.id, kind: :derived_from})
 
       {:ok, a: a, b: b}
     end
 
     test "filtering by kind returns only matching edges", %{a: a, b: b} do
-      see_also_only =
+      references_only =
         Link
-        |> Ash.Query.filter(from_card_id == ^a.id and to_card_id == ^b.id and kind == :see_also)
+        |> Ash.Query.filter(from_card_id == ^a.id and to_card_id == ^b.id and kind == :references)
         |> Ash.read!(authorize?: false)
 
-      assert [%Link{kind: :see_also}] = see_also_only
+      assert [%Link{kind: :references}] = references_only
     end
   end
 end

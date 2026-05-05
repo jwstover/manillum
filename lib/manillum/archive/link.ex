@@ -1,17 +1,26 @@
 defmodule Manillum.Archive.Link do
   @moduledoc """
-  A directed edge between two `Card`s in the same user's archive.
+  An edge between two `Card`s in the same user's archive.
 
   Three kinds (per spec §4):
 
     * `:see_also` — the soft "you might also be interested in this" link
-      surfaced in browse views.
+      surfaced in browse views. **Semantically symmetric**: if A see-also
+      B, then B see-also A. The `:link` action canonicalizes the pair so
+      the smaller UUID is always `from_card_id`, collapsing both
+      directions onto a single row under the unique identity.
     * `:derived_from` — the from-card cites or builds on the to-card.
-    * `:references` — generic citation edge.
+      Asymmetric: A derived from B does not imply B derived from A.
+    * `:references` — generic citation edge. Asymmetric for the same
+      reason.
 
   Identity on `(from_card_id, to_card_id, kind)` lets the same pair
   carry distinct edges of different kinds without duplication. Validations
   reject self-links and cross-user edges.
+
+  See `Manillum.Archive.see_also_partner_ids/1` for the symmetric "all
+  see_also partners of this card" view that hides the canonical-ordering
+  detail from callers.
 
   See spec §4 (Link schema) and §5 Stream B task 4.
   """
@@ -46,6 +55,8 @@ defmodule Manillum.Archive.Link do
       upsert? true
       upsert_identity :unique_directed_link
       upsert_fields []
+
+      change Manillum.Archive.Link.Changes.CanonicalizeSeeAlsoOrder
 
       validate Manillum.Archive.Link.Validations.DifferentCards
       validate Manillum.Archive.Link.Validations.SameUser

@@ -113,6 +113,29 @@ defmodule Manillum.Archive do
     end
   end
 
+  @doc """
+  Returns the partner card ids for every `:see_also` link touching
+  `card_id`. Hides the canonical-ordering detail used by storage —
+  callers see a symmetric view regardless of which side of the pair
+  the queried card is on.
+
+  See `Manillum.Archive.Link` for why see_also is stored once per pair
+  rather than once per direction.
+  """
+  @spec see_also_partner_ids(Ash.UUID.t()) :: [Ash.UUID.t()]
+  def see_also_partner_ids(card_id) when is_binary(card_id) do
+    require Ash.Query
+
+    Manillum.Archive.Link
+    |> Ash.Query.filter(
+      kind == :see_also and (from_card_id == ^card_id or to_card_id == ^card_id)
+    )
+    |> Ash.read!(authorize?: false)
+    |> Enum.map(fn link ->
+      if link.from_card_id == card_id, do: link.to_card_id, else: link.from_card_id
+    end)
+  end
+
   defp follow_redirect(user_id, drawer, date_token, slug) do
     require Ash.Query
 
