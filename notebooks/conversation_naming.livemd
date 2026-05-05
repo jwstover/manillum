@@ -1,0 +1,453 @@
+<!-- livebook:{"persist_outputs":true} -->
+
+# Conversation naming — prompt iteration
+
+## Why this notebook exists
+
+`Manillum.Conversations.Conversation.Changes.GenerateName` is the AshOban-triggered
+action that produces a short title for each chat conversation once it has a
+few messages on it. The original prompt was a single-line system message
+("2-8 words, RESPOND WITH ONLY THE NEW CONVERSATION NAME") followed by the raw
+conversation history. On a Roman-Empire timeline conversation the model
+ignored the instruction and continued the assistant's own bullet-list
+reply — landing **301 characters of markdown** in the `title` column
+(see conversation `019df9cd-326a-7751-b31e-75446fafa2ef` in the dev DB).
+
+This notebook is the iteration surface for the new prompt
+(`Manillum.Conversations.Conversation.NamePrompt`). It runs the new prompt
+against a fixture set covering several conversation shapes — the failing
+case, a single short exchange, a greeting-only stub, a multi-turn drift
+between topics — and reports the model's output, parsed title, and any
+length / format violations.
+
+To re-load prompt edits made in `lib/manillum/conversations/conversation/name_prompt.ex`
+while the notebook is connected, run `r Manillum.Conversations.Conversation.NamePrompt`.
+
+## Connecting
+
+This notebook expects a Mix standalone runtime against the worktree root.
+In Livebook: **Runtime → Mix standalone** → select the repo directory.
+Once connected, Manillum modules are available without any extra
+`Mix.install` — the prompt module, ReqLLM, and Ash are all on the path.
+
+## Smoke check: modules load
+
+```elixir
+[
+  Manillum.Conversations.Conversation.NamePrompt,
+  ReqLLM,
+  ReqLLM.Context
+]
+|> Enum.each(fn mod ->
+  IO.puts("loaded: #{inspect(mod)}")
+end)
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+loaded: Manillum.Conversations.Conversation.NamePrompt
+loaded: ReqLLM
+loaded: ReqLLM.Context
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+:ok
+```
+
+## Inspect the prompt
+
+The system + user messages are pure functions on `NamePrompt`. Edit the
+module, save, then `r Manillum.Conversations.Conversation.NamePrompt`
+in a cell to pick up changes. The fixture below is the same Roman-Empire
+conversation that broke the old prompt.
+
+```elixir
+alias Manillum.Conversations.Conversation.NamePrompt
+
+sample_messages = [
+  %{role: :user, content: "Hello, is this working?"},
+  %{role: :assistant, content: "Hello! Yes, this is working perfectly! How can I help?"},
+  %{role: :user, content: "Can you give me a timeline history of the Roman empire?"},
+  %{role: :assistant, content: "(long markdown timeline elided in this preview…)"}
+]
+
+IO.puts("=== SYSTEM ===\n")
+IO.puts(NamePrompt.system_message())
+IO.puts("\n=== USER ===\n")
+IO.puts(NamePrompt.user_message(sample_messages))
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+=== SYSTEM ===
+
+You are a librarian who writes short titles for chat conversations.
+Each conversation is between a user and Livy, a history-learning assistant.
+Your job is to read the transcript and produce a title naming what the
+conversation is about.
+
+
+=== USER ===
+
+Below are example conversations and their titles, then a new conversation you should title.
+
+<examples>
+  <example>
+    <conversation>
+      <user>Why did the Bronze Age collapse?</user>
+      <assistant>Most historians treat it as a systems collapse — between roughly 1200 and 1150 BCE every major palace economy in the eastern Mediterranean fell within fifty years. Drought, severed trade, internal rebellion, and the Sea Peoples all contributed.</assistant>
+    </conversation>
+    <title>Bronze Age systems collapse</title>
+  </example>
+  <example>
+    <conversation>
+      <user>Tell me about the printing press.</user>
+      <assistant>Gutenberg's movable-type press around 1440 dropped the cost of books by an order of magnitude over a generation, accelerating literacy, the Reformation, and the scientific revolution.</assistant>
+      <user>Was it actually invented in Europe first?</user>
+      <assistant>No — Bi Sheng built movable clay type in Song-dynasty China around 1040, four centuries earlier. Gutenberg's innovation was the metal alloy and the press itself, suited to alphabetic scripts.</assistant>
+    </conversation>
+    <title>Origins of the printing press</title>
+  </example>
+  <example>
+    <conversation>
+      <user>What was the spice trade?</user>
+      <assistant>The long-distance trade in pepper, cloves, nutmeg, and cinnamon between the Indian Ocean and Europe, dominated by Venice and Arab middlemen until the late 15th century.</assistant>
+      <user>How did Portugal break the Venetian monopoly?</user>
+      <assistant>Vasco da Gama's 1498 voyage round the Cape of Good Hope opened a sea route to India that bypassed the Mediterranean intermediaries, collapsing Venetian margins within a generation.</assistant>
+    </conversation>
+    <title>Spice trade and Portuguese expansion</title>
+  </example>
+</examples>
+
+<conversation>
+  <user>Hello, is this working?</user>
+  <assistant>Hello! Yes, this is working perfectly! How can I help?</assistant>
+  <user>Can you give me a timeline history of the Roman empire?</user>
+  <assistant>(long markdown timeline elided in this preview…)</assistant>
+</conversation>
+
+Title the conversation above. Format requirements:
+- 3 to 8 words.
+- Plain text on a single line — no markdown, no quotation marks, no trailing punctuation.
+- Sentence case: capitalize the first word and proper nouns. Do not Title-Case every word.
+- Describe the subject of the conversation, not the user's intent. Prefer noun phrases like "Bronze Age systems collapse" over "Discussion of the Bronze Age".
+
+Output the title inside <title>…</title> tags. Output nothing else.
+
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+:ok
+```
+
+## Fixtures
+
+Five conversation shapes, hand-picked to stress different failure modes
+of the previous prompt:
+
+* **`:roman_empire`** — the actual broken case from the dev DB. Long,
+  bullet-heavy assistant messages. The old prompt drifted into continuing
+  the bullet list instead of producing a title.
+* **`:bronze_age`** — single clean exchange on a focused topic. The
+  baseline "this should obviously work" case.
+* **`:greeting_only`** — only a hello and a reply. The conversation has
+  no real subject; we want to see what the model does with a stub.
+  (In production, `needs_title` won't fire on this — only one message —
+  but it's a useful failure-mode probe.)
+* **`:topic_drift`** — user asks about A, then pivots to B. The title
+  should capture the dominant subject without making up a connection
+  that isn't in the text.
+* **`:disambiguating`** — a conversation about a specific person where
+  several people share the name. The title should pick the right
+  qualifier rather than a generic noun phrase.
+
+```elixir
+fixtures = %{
+  roman_empire: [
+    %{role: :user, content: "Hello, is this working? "},
+    %{role: :assistant, content: "Hello! Yes, this is working perfectly! I'm here and ready to help you. How can I assist you today?"},
+    %{role: :user, content: "Can you give me a timeline history of the roman empire? "},
+    %{role: :assistant, content: """
+    # Timeline History of the Roman Empire
+
+    Here's a comprehensive timeline of the Roman Empire:
+
+    ## **Roman Kingdom (753-509 BCE)**
+    - **753 BCE** - Traditional founding of Rome by Romulus
+    - **509 BCE** - Overthrow of the last king, Tarquin the Proud; Republic established
+
+    ## **Roman Republic (509-27 BCE)**
+    - **509-264 BCE** - Expansion throughout Italy
+    - **264-241 BCE** - First Punic War (vs. Carthage)
+    - **218-201 BCE** - Second Punic War; Hannibal crosses the Alps
+    - **149-146 BCE** - Third Punic War; Carthage destroyed
+    - **133-121 BCE** - Gracchi brothers' reforms
+    - **73-71 BCE** - Spartacus slave revolt
+    - **60 BCE** - First Triumvirate (Caesar, Pompey, Crassus)
+    - **49 BCE** - Caesar crosses the Rubicon; Civil War begins
+    - **44 BCE** - Assassination of Julius Caesar
+    - **43 BCE** - Second Triumvirate (Octavian, Mark Antony, Lepidus)
+    - **31 BCE** - Battle of Actium; Octavian defeats Antony and Cleopatra
+
+    ## **Roman Empire - Principate (27 BCE - 284 CE)**
+
+    ### **Julio-Claudian Dynasty (27 BCE - 68 CE)**
+    - **27 BCE** - Octavian becomes Augustus; Empire begins
+    - **14 CE** - Death of Augustus; Tiberius becomes emperor
+    - **37-41 CE** - Reign of Caligula
+    - **41-54 CE** - Reign of Claudius; conquest of Britain begins (43 CE)
+    - **54-68 CE** - Reign of Nero; Great Fire of Rome (64 CE)
+
+    ### **Flavian Dynasty (69-96 CE)**
+    - **69-79 CE** - Vespasian; construction of Colosseum begins
+    - **79 CE** - Eruption of Mount Vesuvius destroys Pompeii
+    - **79-81 CE** - Titus; Colosseum completed
+    - **81-96 CE** - Domitian
+
+    ### **Nerva-Antonine Dynasty (96-192 CE) - "Five Good Emperors"**
+    - **96-98 CE** - Nerva
+    - **98-117 CE** - Trajan; Empire reaches greatest extent (117 CE)
+    - **117-138 CE** - Hadrian; Hadrian's Wall built in Britain
+    - **138-161 CE** - Antoninus Pius
+    - **161-180 CE** - Marcus Aurelius (philosopher-emperor)
+    - **180-192 CE** - Commodus
+
+    ## **Fall of the Western Roman Empire**
+    - **410 CE** - Visigoths sack Rome
+    - **455 CE** - Vandals sack Rome
+    - **476 CE** - Romulus Augustulus deposed; Western Empire ends
+    """},
+    %{role: :user, content: "Where does cicero fall on this timeline? "},
+    %{role: :assistant, content: """
+    Great question! **Cicero (Marcus Tullius Cicero)** falls during the **late Roman Republic** period.
+
+    ## **Cicero's Timeline (106-43 BCE)**
+
+    - **106 BCE** - Born in Arpinum, Italy
+    - **63 BCE** - Served as Consul; exposed the Catiline Conspiracy
+    - **58-57 BCE** - Exiled briefly for executing conspirators without trial
+    - **51-50 BCE** - Served as governor of Cilicia
+    - **49 BCE** - Caesar crosses the Rubicon; Cicero initially supports Pompey
+    - **44 BCE** - Julius Caesar assassinated; Cicero supports the conspirators
+    - **44-43 BCE** - Delivers his famous "Philippics" against Mark Antony
+    - **43 BCE** - Killed on December 7 during the proscriptions of the Second Triumvirate
+
+    He was Rome's greatest orator, a philosopher, lawyer, and statesman who tried to preserve the Republic.
+    """}
+  ],
+  bronze_age: [
+    %{role: :user, content: "Why did the Bronze Age collapse?"},
+    %{role: :assistant, content: """
+    Most historians treat it as a systems collapse. Between roughly 1200 and 1150 BCE,
+    nearly every major palace economy in the eastern Mediterranean fell within fifty
+    years — Mycenaean Greece, the Hittite Empire, Ugarit, and Cyprus all show
+    destruction layers in roughly that window.
+
+    The Sea Peoples are part of the story but not the whole story. Eric Cline's
+    framing — that simultaneous stresses (drought, earthquake swarms, internal
+    rebellion, severed trade) overwhelmed a fragile interconnected system — is now
+    the dominant view. Drought has the strongest material evidence: pollen cores
+    from the Sea of Galilee and Cyprus, published by Kaniewski et al. in 2013, show
+    a roughly three-hundred-year arid phase beginning around 1200 BC.
+    """}
+  ],
+  greeting_only: [
+    %{role: :user, content: "Hello, is this working?"},
+    %{role: :assistant, content: "Hello! Yes, this is working perfectly! How can I help?"}
+  ],
+  topic_drift: [
+    %{role: :user, content: "Tell me about the Library of Alexandria."},
+    %{role: :assistant, content: """
+    Founded around 280 BCE under Ptolemy II, the Library of Alexandria was the
+    most ambitious accumulation of written knowledge in the ancient world —
+    estimates put its scroll count at 400,000 to 700,000 at its peak. It declined
+    over centuries through fire, neglect, and political instability rather than
+    a single dramatic event.
+    """},
+    %{role: :user, content: "What about the Library at Pergamon? Was it a rival?"},
+    %{role: :assistant, content: """
+    Yes — Pergamon's Attalid kings deliberately built a competing library in the
+    2nd century BCE, supposedly large enough that Egypt embargoed papyrus exports
+    to slow them down. Pergamon's response was to refine parchment (treated animal
+    skin) into a viable writing surface, which is where we get the word "parchment"
+    (from "Pergamenum"). Mark Antony reportedly later transferred the Pergamon
+    library's holdings to Cleopatra as a gift, though that account is contested.
+    """},
+    %{role: :user, content: "Was parchment actually a Pergamon invention?"},
+    %{role: :assistant, content: """
+    Not strictly — treated animal skin had been used as a writing surface for
+    centuries before Pergamon. What Pergamon refined was the manufacturing process
+    that produced consistent, double-sided, thinner parchment suitable for codex-
+    style books. The "invention" attribution is more about scaling and quality
+    than first-use.
+    """}
+  ],
+  disambiguating: [
+    %{role: :user, content: "Tell me about Charles the Bald."},
+    %{role: :assistant, content: """
+    Charles II "the Bald" (823–877) was the youngest son of Louis the Pious and
+    grandson of Charlemagne. After the 843 Treaty of Verdun divided the Carolingian
+    Empire among Louis's sons, Charles received West Francia — roughly the territory
+    that would become medieval France. He spent most of his reign defending against
+    Viking raids and consolidating control over a fractious nobility, and was
+    crowned Holy Roman Emperor in 875, two years before his death.
+    """},
+    %{role: :user, content: "How did his reign compare to his brother Louis the German's?"},
+    %{role: :assistant, content: """
+    Louis the German (806–876) ruled East Francia — the German-speaking territories.
+    His reign was generally more stable than Charles the Bald's: he faced fewer
+    Viking incursions (East Francia was less coastal), his nobility was less
+    fragmented, and he reigned for longer over a more cohesive realm. Charles
+    inherited the harder problem — defending a long Atlantic and Channel coast
+    while managing a magnate class that frequently rebelled — and his ad hoc
+    grants of land and title to nobles in exchange for military service helped
+    seed the feudal arrangements that defined French governance for the next
+    five centuries.
+    """}
+  ]
+}
+
+Map.keys(fixtures)
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+[:roman_empire, :bronze_age, :greeting_only, :topic_drift, :disambiguating]
+```
+
+## Run all fixtures through the new prompt
+
+This calls `ReqLLM.generate_text/2` with the model `anthropic:claude-sonnet-4-5`
+and `max_tokens: NamePrompt.max_tokens()` (40, by design — see the moduledoc
+on `NamePrompt` for why). For each fixture the cell prints:
+
+* the parsed title (or the parser's error reason)
+* the title's character length
+* the raw text the model returned (so you can compare against the
+  parser's interpretation)
+
+If a fixture errored, the `ERROR:` line carries the parser's reason
+(`:title_too_long`, `:title_contains_markdown`, `:empty_title`) or a
+`ReqLLM error: …` for transport / auth failures.
+
+```elixir
+run_fixture = fn name, messages ->
+  prompt = NamePrompt.build(messages)
+
+  case ReqLLM.generate_text("anthropic:claude-sonnet-4-5", prompt,
+         max_tokens: NamePrompt.max_tokens()
+       ) do
+    {:ok, response} ->
+      raw = ReqLLM.Response.text(response)
+
+      case NamePrompt.parse_response(raw) do
+        {:ok, title} ->
+          %{fixture: name, raw: raw, title: title, len: String.length(title), error: nil}
+
+        {:error, reason} ->
+          %{fixture: name, raw: raw, title: nil, len: nil, error: inspect(reason)}
+      end
+
+    {:error, error} ->
+      %{
+        fixture: name,
+        raw: nil,
+        title: nil,
+        len: nil,
+        error: "ReqLLM error: #{inspect(error)}"
+      }
+  end
+end
+
+print_result = fn r ->
+  IO.puts("─────────────────────────────────────────────────────────────")
+  IO.puts("fixture:  #{inspect(r.fixture)}")
+
+  if r.error do
+    IO.puts("ERROR:    #{r.error}")
+  else
+    IO.puts("title:    #{r.title}")
+    IO.puts("length:   #{r.len} chars")
+  end
+
+  if r.raw, do: IO.puts("raw:      #{inspect(r.raw)}")
+end
+
+results =
+  fixtures
+  |> Enum.map(fn {name, messages} -> run_fixture.(name, messages) end)
+
+Enum.each(results, print_result)
+
+IO.puts("─────────────────────────────────────────────────────────────")
+IO.puts("ran #{length(results)} fixtures · #{Enum.count(results, & &1.error)} errored")
+```
+
+## Iterate on a single fixture
+
+Sometimes you want to focus on one conversation while you tune the prompt.
+Edit the fixture key, re-evaluate the cell, and only that one runs.
+
+```elixir
+focus_fixture = :roman_empire
+
+focus_messages = fixtures[focus_fixture]
+focus_prompt = NamePrompt.build(focus_messages)
+
+case ReqLLM.generate_text("anthropic:claude-sonnet-4-5", focus_prompt,
+       max_tokens: NamePrompt.max_tokens()
+     ) do
+  {:ok, response} ->
+    raw = ReqLLM.Response.text(response)
+
+    %{
+      fixture: focus_fixture,
+      raw: raw,
+      parsed: NamePrompt.parse_response(raw)
+    }
+
+  {:error, error} ->
+    %{fixture: focus_fixture, error: error}
+end
+```
+
+## Sign-off checklist
+
+Before wiring `NamePrompt` into `Manillum.Conversations.Conversation.Changes.GenerateName`
+in production, the run-all cell above should:
+
+* [ ] **`:roman_empire`** — produce a 3–8 word title; no markdown; no
+  ```
+  `Roman Empire` style Title-Case-Of-Every-Word; ideally something
+  like `Roman Empire timeline overview` or `Roman Empire and Cicero`
+  that captures both the timeline ask and the Cicero follow-up.
+  ```
+* [ ] **`:bronze_age`** — clean noun phrase, e.g. `Bronze Age systems collapse`.
+* [ ] **`:greeting_only`** — the model should produce *something* (the
+  ```
+  `:title_too_long` and markdown checks will catch the worst cases),
+  but content quality on a stub is intrinsically limited. Acceptable
+  outputs include `Greeting and setup test`, `Connection check`, etc.
+  The point of this fixture isn't a great title — it's that we don't
+  crash or produce 300 chars of bullet points.
+  ```
+* [ ] **`:topic_drift`** — captures the dominant thread (Library of
+  ```
+  Alexandria + Pergamon rivalry) without making up a synthesis the
+  conversation didn't reach.
+  ```
+* [ ] **`:disambiguating`** — uses the qualifier "Charles the Bald" or
+  ```
+  "Carolingian succession", not just `Charles` or `medieval kings`.
+  ```
+* [ ] No fixture errors with `:title_too_long` or `:title_contains_markdown`.
+
+When all five pass, wire `NamePrompt` into the production change module
+in a follow-up PR.

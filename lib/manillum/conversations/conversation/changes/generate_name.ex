@@ -2,7 +2,7 @@ defmodule Manillum.Conversations.Conversation.Changes.GenerateName do
   use Ash.Resource.Change
   require Ash.Query
 
-  alias ReqLLM.Context
+  alias Manillum.Conversations.Conversation.NamePrompt
 
   @impl true
   def change(changeset, _opts, context) do
@@ -17,33 +17,18 @@ defmodule Manillum.Conversations.Conversation.Changes.GenerateName do
         |> Ash.Query.sort(inserted_at: :asc)
         |> Ash.read!(scope: context)
 
-      prompt_messages =
-        [
-          Context.system("""
-          Provide a short name for the current conversation.
-          2-8 words, preferring more succinct names.
-          RESPOND WITH ONLY THE NEW CONVERSATION NAME.
-          """)
-        ] ++
-          Enum.map(messages, fn message ->
-            if message.role == :assistant do
-              Context.assistant(message.content)
-            else
-              Context.user(message.content)
-            end
-          end)
+      prompt = NamePrompt.build(messages)
 
-      ReqLLM.generate_text("anthropic:claude-sonnet-4-5", prompt_messages)
-      |> case do
-        {:ok, response} ->
-          Ash.Changeset.force_change_attribute(
-            changeset,
-            :title,
-            ReqLLM.Response.text(response)
-          )
-
-        {:error, error} ->
-          {:error, error}
+      with {:ok, response} <-
+             ReqLLM.generate_text("anthropic:claude-sonnet-4-5", prompt,
+               max_tokens: NamePrompt.max_tokens()
+             ),
+           raw <- ReqLLM.Response.text(response),
+           {:ok, title} <- NamePrompt.parse_response(raw) do
+        Ash.Changeset.force_change_attribute(changeset, :title, title)
+      else
+        {:error, reason} ->
+          {:error, reason}
       end
     end)
   end
