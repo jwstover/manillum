@@ -22,6 +22,7 @@
 }
 
 .toast {
+  position: relative;
   pointer-events: auto;
   min-width: 18rem;
   max-width: 22rem;
@@ -39,12 +40,10 @@
 
 .toast--warn {
   border-top-color: var(--color-brass-bright);
-  background: rgba(184, 137, 58, 0.10);
 }
 
 .toast--error {
   border-top-color: var(--color-oxblood-bright);
-  background: var(--color-paper-deep);
 }
 
 .toast__kicker {

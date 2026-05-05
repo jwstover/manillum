@@ -69,13 +69,16 @@ defmodule ManillumWeb.Layouts do
 
   def flash_group(assigns) do
     ~H"""
-    <div id={@id} aria-live="polite">
+    <div id={@id} class="toast_stack" aria-live="polite">
       <.flash kind={:info} flash={@flash} />
+      <.flash kind={:ok} flash={@flash} />
+      <.flash kind={:warn} flash={@flash} />
       <.flash kind={:error} flash={@flash} />
 
       <.flash
         id="client-error"
         kind={:error}
+        kicker="● OFFLINE"
         title={gettext("We can't find the internet")}
         phx-disconnected={show(".phx-client-error #client-error") |> JS.remove_attribute("hidden")}
         phx-connected={hide("#client-error") |> JS.set_attribute({"hidden", ""})}
@@ -88,6 +91,7 @@ defmodule ManillumWeb.Layouts do
       <.flash
         id="server-error"
         kind={:error}
+        kicker="● ERROR"
         title={gettext("Something went wrong!")}
         phx-disconnected={show(".phx-server-error #server-error") |> JS.remove_attribute("hidden")}
         phx-connected={hide("#server-error") |> JS.set_attribute({"hidden", ""})}

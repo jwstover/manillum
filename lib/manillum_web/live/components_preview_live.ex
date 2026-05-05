@@ -16,6 +16,39 @@ defmodule ManillumWeb.ComponentsPreviewLive do
   end
 
   @impl true
+  def handle_event("demo_flash", %{"kind" => "info"}, socket) do
+    {:noreply,
+     put_flash(socket, :info, "Catalog still drafting — Livy will surface drafts when ready.")}
+  end
+
+  def handle_event("demo_flash", %{"kind" => "ok"}, socket) do
+    {:noreply,
+     put_flash(socket, :ok, %{
+       kicker: "● FILED",
+       title: "3 cards filed in Dr. 01 Antiquity",
+       body: "From QRY № 0089. Each card is independently scheduled for review."
+     })}
+  end
+
+  def handle_event("demo_flash", %{"kind" => "warn"}, socket) do
+    {:noreply,
+     put_flash(socket, :warn, %{
+       kicker: "● POSSIBLE DUPLICATE",
+       title: "Looks like an existing card",
+       body: "Found ANT · 1177BC · COLLAPSE. Review at the filing tray."
+     })}
+  end
+
+  def handle_event("demo_flash", %{"kind" => "error"}, socket) do
+    {:noreply,
+     put_flash(socket, :error, %{
+       kicker: "● FILING FAILED",
+       title: "Slug collision",
+       body: "Couldn't save — the call number already exists. Edit the slug to differentiate."
+     })}
+  end
+
+  @impl true
   def render(assigns) do
     ~H"""
     <.page>
@@ -29,6 +62,8 @@ defmodule ManillumWeb.ComponentsPreviewLive do
         <:tab id="dashboard" href="/dev/dashboard">Dashboard</:tab>
       </.topbar>
       <.era_band pin_year={1519} pin_label="design system review" />
+
+      <ManillumWeb.Layouts.flash_group flash={@flash} />
 
       <div class="cpv">
         <header class="cpv__intro">
@@ -475,8 +510,7 @@ defmodule ManillumWeb.ComponentsPreviewLive do
                 <.card face={:draft}>
                   <div style="background:rgba(154,122,58,.14);border:1px solid var(--color-brass);padding:.375rem .5rem;margin-bottom:.5rem;font-family:var(--font-body);font-size:.71875rem;font-style:italic;color:var(--color-ink);line-height:1.4">
                     <.icon name="hero-exclamation-triangle-micro" />
-                    Looks like your existing card
-                    <.call_number inline tone={:brass}>ANT · 1177BC · COLLAPSE</.call_number>.
+                    Looks like your existing card <.call_number inline tone={:brass}>ANT · 1177BC · COLLAPSE</.call_number>.
                     <div style="display:flex;gap:.375rem;margin-top:.375rem">
                       <span class="action_pill" style="background:var(--color-brass)">merge</span>
                       <.action_pill variant={:ghost}>file as new</.action_pill>
@@ -561,6 +595,18 @@ defmodule ManillumWeb.ComponentsPreviewLive do
             <.toast kind={:error} kicker="● FILING FAILED" title="Slug collision">
               Couldn't save — the call number already exists. Edit the slug to differentiate.
             </.toast>
+          </div>
+
+          <h4 class="cpv__h4">Live flash — drives the same toast component</h4>
+          <p class="cpv__sub">
+            Click any kind to push a flash. Plain strings render as a body-only toast; structured
+            payloads carry kicker, title, and body.
+          </p>
+          <div class="cpv__toasts" style="grid-template-columns:repeat(4,1fr)">
+            <.button phx-click="demo_flash" phx-value-kind="info">info · plain</.button>
+            <.button phx-click="demo_flash" phx-value-kind="ok">ok · structured</.button>
+            <.button phx-click="demo_flash" phx-value-kind="warn">warn · structured</.button>
+            <.button phx-click="demo_flash" phx-value-kind="error">error · structured</.button>
           </div>
         </.cpv_section>
 
