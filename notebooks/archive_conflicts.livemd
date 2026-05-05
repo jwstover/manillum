@@ -114,11 +114,13 @@ Two calls with different casings should return the same `tag.id`, and the persis
 Expected: `same_id?: true`, all three `name` fields read `"Bronze Age"` (first call's
 casing wins), `normalized_name: "bronze age"`.
 
-## Scenario C — Link directionality
+## Scenario C — Link semantics (see_also symmetric, others directional)
 
-File two cards (`COLLAPSE` and `SEA-PEOPLES`); link `COLLAPSE → SEA-PEOPLES` with
-`:see_also`; load each card's `outgoing_links` / `incoming_links`. The directed edge must
-appear on `COLLAPSE.outgoing_links` and `SEA-PEOPLES.incoming_links`, not the other way.
+File two cards (`COLLAPSE` and `SEA-PEOPLES`). First link them with `:see_also` —
+the action canonicalizes the pair so a single row covers both directions, and
+`Archive.see_also_partner_ids/1` surfaces the partner from either side. Then
+add a `:references` edge to confirm directional kinds still preserve from→to
+ordering on `outgoing_links` / `incoming_links`.
 
 ```elixir
 {:ok, collapse} =
@@ -143,26 +145,58 @@ appear on `COLLAPSE.outgoing_links` and `SEA-PEOPLES.incoming_links`, not the ot
     back: "A loose confederation cited in Egyptian sources around the time of the Bronze Age collapse."
   })
 
-{:ok, _link} =
+{:ok, see_also_link} =
   Manillum.Archive.link(%{
     from_card_id: collapse.id,
     to_card_id: sea_peoples.id,
     kind: :see_also
   })
 
+# Same pair, reverse direction — canonicalization collapses to the same row.
+{:ok, see_also_reverse} =
+  Manillum.Archive.link(%{
+    from_card_id: sea_peoples.id,
+    to_card_id: collapse.id,
+    kind: :see_also
+  })
+
+# Directional kind: from→to ordering is preserved.
+{:ok, _refs} =
+  Manillum.Archive.link(%{
+    from_card_id: collapse.id,
+    to_card_id: sea_peoples.id,
+    kind: :references
+  })
+
 collapse_loaded = Ash.load!(collapse, [:outgoing_links, :incoming_links])
 sea_peoples_loaded = Ash.load!(sea_peoples, [:outgoing_links, :incoming_links])
 
 %{
-  collapse_outgoing: Enum.map(collapse_loaded.outgoing_links, & &1.kind),
-  collapse_incoming: Enum.map(collapse_loaded.incoming_links, & &1.kind),
-  sea_peoples_outgoing: Enum.map(sea_peoples_loaded.outgoing_links, & &1.kind),
-  sea_peoples_incoming: Enum.map(sea_peoples_loaded.incoming_links, & &1.kind)
+  see_also_same_row?: see_also_link.id == see_also_reverse.id,
+  collapse_see_also_partners: Manillum.Archive.see_also_partner_ids(collapse.id),
+  sea_peoples_see_also_partners: Manillum.Archive.see_also_partner_ids(sea_peoples.id),
+  collapse_outgoing_kinds: Enum.map(collapse_loaded.outgoing_links, & &1.kind) |> Enum.sort(),
+  collapse_incoming_kinds: Enum.map(collapse_loaded.incoming_links, & &1.kind) |> Enum.sort(),
+  sea_peoples_outgoing_kinds:
+    Enum.map(sea_peoples_loaded.outgoing_links, & &1.kind) |> Enum.sort(),
+  sea_peoples_incoming_kinds:
+    Enum.map(sea_peoples_loaded.incoming_links, & &1.kind) |> Enum.sort()
 }
 ```
 
-Expected: `collapse_outgoing: [:see_also]`, `sea_peoples_incoming: [:see_also]`, the
-other two empty.
+Expected:
+
+* `see_also_same_row?: true` — A→B and B→A returned the same row id.
+* `collapse_see_also_partners: [<sea_peoples.id>]` and
+  `sea_peoples_see_also_partners: [<collapse.id>]` — symmetric view from
+  either side.
+* `collapse_outgoing_kinds: [:references]` and
+  `sea_peoples_incoming_kinds: [:references]` — the directional `:references`
+  edge is on the from-side outgoing and the to-side incoming, as before.
+* The `:see_also` row appears on **one** side's `outgoing_links` and the other
+  side's `incoming_links` depending on which UUID compared smaller. That's
+  the canonical-storage detail callers shouldn't reason about — use
+  `see_also_partner_ids/1` instead.
 
 ## Scenario D — retroactive rename produces a redirect
 
@@ -304,21 +338,23 @@ should surface the second as a candidate when filing the first.
 
 For each scenario above, confirm the expected output landed:
 
-- [ ] **Scenario A** — `propose_call_number` returned `status: :collision` with
+* [ ] **Scenario A** — `propose_call_number` returned `status: :collision` with
   `existing_card_id` matching the seeded CAESAR card.
-- [ ] **Scenario B** — three calls with different casings returned the same `tag.id`;
+* [ ] **Scenario B** — three calls with different casings returned the same `tag.id`;
   the first call's casing (`"Bronze Age"`) is preserved on the persisted row;
   `normalized_name` is `"bronze age"`.
-- [ ] **Scenario C** — `COLLAPSE.outgoing_links` contains the `:see_also` edge;
-  `SEA-PEOPLES.incoming_links` mirrors it; the reverse navigations are empty.
-- [ ] **Scenario D** — rename returned `:ok` with the new slug; the
+* [ ] **Scenario C** — `:see_also` reverse call returned the same row id as the
+  forward call; `see_also_partner_ids/1` returns the other card from either side;
+  the `:references` edge is on `COLLAPSE.outgoing_links` and
+  `SEA-PEOPLES.incoming_links` (directional kinds preserve from→to ordering).
+* [ ] **Scenario D** — rename returned `:ok` with the new slug; the
   `{:card_renamed, "ANT · 49BC · CAESAR", "ANT · 49BC · JULIUS-CAESAR"}` broadcast
   arrived; `get_card_by_call_number` follows the redirect from the old name to the
   renamed card; the new `OCTAVIAN` card resolves directly.
-- [ ] **Scenario E** — autostub created two stubs round 1, no new stubs round 2
+* [ ] **Scenario E** — autostub created two stubs round 1, no new stubs round 2
   (idempotent); after promoting Meiji to `:filed` and deleting the Iwakura stub,
   round 3 created exactly one new stub (`IWAKURA-MISSION`).
-- [ ] **Scenario F** — acknowledged as deferred to M-24.
+* [ ] **Scenario F** — acknowledged as deferred to M-24.
 
 When all five tick, sign off **Gate B.2** on the project index and proceed to M-24
 (dup-detection follow-on) and M-28 (filing tray + chat-to-card loop).
