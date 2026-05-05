@@ -1,0 +1,606 @@
+<!-- livebook:{"persist_outputs":true} -->
+
+# Cataloging — Gate C.1 prompt iteration
+
+## Why this notebook exists
+
+Gate C.1 (per spec §5 Stream C) is the most important review in the project: cataloging
+quality is iterated by hand against a fixture set of source-text inputs, and the
+prompt template is edited until the LLM consistently produces high-quality
+`%Manillum.Archive.Cataloging.DraftCard{}` outputs.
+
+This notebook is the **Gate C.1 review surface**. It runs the project's `:extract_drafts`
+prompt-backed action against the fixtures below, prints a digest of the resulting
+`DraftCard`s, and lets the reviewer iterate on the prompt **without** touching the DB,
+Oban, or PubSub.
+
+To re-load prompt edits made in `lib/manillum/archive/cataloging/prompt.ex` while the
+notebook is connected, run `r Manillum.Archive.Cataloging.Prompt` in the cell below.
+
+## Connecting
+
+This notebook is configured to connect to a running mix project at the worktree root.
+In Livebook: **Runtime → Mix standalone** → select this repo's directory. Once
+connected, the modules below are available without `Mix.install` — Kino is the only
+extra.
+
+## Smoke check: modules load
+
+```elixir
+[
+  AshAi.Actions.Prompt,
+  Manillum.AI.ReqLLM,
+  Manillum.Archive,
+  Manillum.Archive.Capture,
+  Manillum.Archive.Cataloging.DraftCard,
+  Manillum.Archive.Cataloging.Prompt
+]
+|> Enum.each(fn mod ->
+  IO.puts("loaded: #{inspect(mod)}")
+end)
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+loaded: AshAi.Actions.Prompt
+loaded: Manillum.AI.ReqLLM
+loaded: Manillum.Archive
+loaded: Manillum.Archive.Capture
+loaded: Manillum.Archive.Cataloging.DraftCard
+loaded: Manillum.Archive.Cataloging.Prompt
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+:ok
+```
+
+## Inspect the prompt
+
+The system message and user message are plain strings; edit
+`lib/manillum/archive/cataloging/prompt.ex`, save, then `r Manillum.Archive.Cataloging.Prompt`.
+
+```elixir
+IO.puts("=== SYSTEM ===\n")
+IO.puts(Manillum.Archive.Cataloging.Prompt.system_message())
+IO.puts("\n=== USER (with sample text) ===\n")
+IO.puts(Manillum.Archive.Cataloging.Prompt.user_message("(your source text here)"))
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+=== SYSTEM ===
+
+You are Livy's archivist: a meticulous cataloger of historical facts.
+
+You are given a chunk of conversation text — a snippet from a chat
+where the user is learning history. Your job is to distill that text
+into one or more **atomic Draft Cards**, each capturing a single
+memorable fact suitable for spaced-repetition review.
+
+## What an atomic card is
+
+Atomic = one self-contained idea. Card front and back must each stand
+on their own without the conversation context. If a fact involves a
+cause and a consequence, that's two cards. If a paragraph discusses
+three different battles, that's at least three cards. Do not combine
+unrelated facts into a single "topic bucket" card — atomic facts are
+not topic buckets.
+
+## Per-card fields
+
+For each atomic fact, produce a Draft Card with these fields:
+
+- **card_type**: one of `:person | :event | :place | :concept | :source | :date | :artifact`
+- **drawer**: one of the seven era codes:
+  - `:ANT` — Antiquity (before ~500 AD)
+  - `:CLA` — Classical (~500 BC – ~500 AD; Greek/Roman world specifically)
+  - `:MED` — Medieval (~500 – ~1500)
+  - `:REN` — Renaissance / Early Modern (~1300 – ~1700)
+  - `:EAR` — Early Modern (~1500 – ~1800)
+  - `:MOD` — Modern (~1800 – ~1945)
+  - `:CON` — Contemporary (~1945 – present)
+  Pick the best fit when eras overlap. Concepts and timeless ideas
+  use `:CON` if they're modern coinages; otherwise the era they
+  belong to (e.g. Plato → `:CLA`, the printing press → `:REN`).
+- **date_token**: the card's "when". Examples:
+  - Specific year: `"1177BC"`, `"1066"`, `"1789"`
+  - Century: `"C5BC"` (5th century BC), `"C13"` (13th century AD)
+  - Placeless / timeless concept that doesn't anchor to a year: `"CON"`
+  - Place-only / non-temporal: `"LOC"`
+  Prefer the most specific token that the source text supports.
+  Don't invent a year that isn't in the text or implied by it.
+- **slug**: 1–3 ALL-CAPS tokens, hyphen-joined, content-relevant.
+  Examples: `"COLLAPSE"`, `"JULIUS-CAESAR"`, `"THERMOPYLAE-NAVAL"`,
+  `"PRINTING-PRESS"`. Prefer a distinguishing descriptor (a person's
+  given name, an event's qualifier, a place's region) over a generic
+  family name. Numeric suffixes (`-A`, `-2`) are a smell.
+- **front**: the review prompt — a single question that the back
+  answers. Phrase it so the answer is recallable, not a gimme.
+  Avoid yes/no. Avoid leading the answer.
+- **back**: the atomic fact itself, 1–4 sentences. Self-contained:
+  a reader who has never seen the conversation should still
+  understand the fact. Mention the people, places, dates that
+  anchor it.
+- **tags**: 1–4 human-readable cross-reference tags, e.g.
+  `["Bronze Age", "Eastern Mediterranean"]`. Used for grouping in
+  the Reference view.
+- **entities**: list of named entities (people, places, sources)
+  mentioned in the **back** text. Used downstream to autostub
+  reference cards. Only include entities that have a name; skip
+  generic nouns.
+
+## Output rules
+
+- Return between 1 and ~10 Draft Cards. Most snippets produce 1–4.
+- If the text contains nothing card-worthy (e.g. it's a question
+  from the user, or a vague statement with no facts), return an
+  empty list.
+- Every card stands alone. Do not produce cards that depend on
+  adjacent cards to make sense.
+- Do not editorialize or add facts not supported by the source text.
+- Be conservative on dates: if the text is genuinely vague, use a
+  century (`"C5BC"`) or `"CON"` for concepts.
+- All field values must conform to the enums above.
+
+
+=== USER (with sample text) ===
+
+Source text to catalog:
+
+"""
+(your source text here)
+"""
+
+Produce the list of atomic Draft Cards now.
+
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+:ok
+```
+
+## Fixtures — Gate C.1 review set (spec §5 Stream C)
+
+The reviewer evaluates each fixture against the spec's checklist:
+**card count appropriate? slugs sensible? dates correct? tags reasonable? entities identified?
+front/back atomic and self-contained?**
+
+Edit / extend the list as new failure modes are found.
+
+```elixir
+fixtures = [
+  %{
+    label: "1. short factual paragraph (1 atomic fact)",
+    text: """
+    The Battle of Thermopylae in 480 BC was a key engagement in the second Persian
+    invasion of Greece. A small force led by King Leonidas of Sparta held a narrow
+    coastal pass against a much larger Persian army for three days before being
+    outflanked.
+    """
+  },
+  %{
+    label: "2. multi-paragraph response (5–10 atomic facts)",
+    text: """
+    The Bronze Age collapse refers to the rapid breakdown of the eastern Mediterranean
+    palace economies between roughly 1200 and 1150 BCE. Mycenaean centers in Greece,
+    Hittite cities in Anatolia, and Ugarit on the Syrian coast all show destruction
+    layers in this window.
+
+    Several causes have been proposed: drought, earthquakes, internal rebellion, and
+    raiding by the so-called "Sea Peoples." The current consensus is that no single
+    cause is sufficient — a "systems collapse" model fits the evidence better, where
+    the entangled palace economies failed together once enough nodes broke.
+
+    Egypt, while damaged by Sea Peoples raids under Ramesses III, survived as an
+    organized state. Recovery in the wider region took several centuries; the early
+    Iron Age that followed is sometimes called a "dark age" for the lack of writing.
+    """
+  },
+  %{
+    label: "3. one-sentence selection",
+    text: """
+    The printing press, brought to Europe by Johannes Gutenberg around 1440, dramatically
+    reduced the cost of book production.
+    """
+  },
+  %{
+    label: "4. multiple people, places, and a concept",
+    text: """
+    The First Triumvirate (60 BC) was an informal political alliance between Julius
+    Caesar, Pompey the Great, and Marcus Crassus. It allowed Caesar to secure the
+    consulship and a five-year command in Gaul. The triumvirate broke down after
+    Crassus's death at the Battle of Carrhae (53 BC), leaving Caesar and Pompey to
+    contest power directly.
+    """
+  },
+  %{
+    label: "5. ambiguous slug — Caesar disambiguation case",
+    text: """
+    Augustus, born Gaius Octavius and later known as Octavian, became the first Roman
+    emperor in 27 BC. He was Julius Caesar's great-nephew and adopted heir, and his
+    rise to sole power followed the defeat of Mark Antony at the Battle of Actium
+    in 31 BC.
+    """
+  },
+  %{
+    label: "6. duplicate-of-existing-fixture",
+    text: """
+    Around 1200 BC, the Mediterranean palace economies of the Bronze Age all collapsed.
+    """
+  },
+  %{
+    label: "7. fresh era — medieval / modern",
+    text: """
+    The Black Death reached Europe in 1347, carried by Genoese trading ships from the
+    Crimean port of Kaffa. Within four years it had killed an estimated one-third of
+    the European population. The plague returned in waves through the next century,
+    reshaping labor markets and feudal land relationships.
+    """
+  },
+  %{
+    label: "8. list-style response",
+    text: """
+    Three key reforms of the Meiji Restoration:
+
+    - Abolition of the feudal han system (1871) and replacement with prefectures
+    - Introduction of universal compulsory education (1872)
+    - The Iwakura Mission (1871–1873), a diplomatic embassy to study Western institutions
+    """
+  },
+  %{
+    label: "9. explicit dates",
+    text: """
+    The Treaty of Westphalia, signed on October 24, 1648, ended the Thirty Years' War
+    in the Holy Roman Empire and the Eighty Years' War between Spain and the Dutch
+    Republic. It is often cited as the origin of the modern European state system.
+    """
+  },
+  %{
+    label: "10. obscure topic — hallucination risk",
+    text: """
+    The Almoravid dynasty, founded by Abdullah ibn Yasin among Sanhaja Berber tribes in
+    the 1040s, expanded from the western Sahara to control Morocco and al-Andalus by
+    the late 11th century. Their capital at Marrakesh was founded in 1070.
+    """
+  }
+]
+
+length(fixtures)
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+10
+```
+
+## Run a single fixture
+
+Use this cell during prompt iteration to focus on one fixture at a time. **The
+LLM call hits Anthropic — costs ~$0.001 per fixture.**
+
+```elixir
+fixture = Enum.at(fixtures, 7)
+IO.puts("=== Fixture: #{fixture.label} ===\n")
+IO.puts(fixture.text)
+IO.puts("\n=== Output ===\n")
+
+case Manillum.Archive.extract_drafts(fixture.text) do
+  {:ok, drafts} ->
+    drafts
+    |> Enum.with_index(1)
+    |> Enum.each(fn {%Manillum.Archive.Cataloging.DraftCard{} = d, i} ->
+      IO.puts("--- DraftCard #{i} ---")
+      IO.puts("call_number  : #{d.drawer} · #{d.date_token} · #{d.slug}")
+      IO.puts("type         : #{d.card_type}")
+      IO.puts("front        : #{d.front}")
+      IO.puts("back         : #{d.back}")
+      IO.puts("tags         : #{inspect(d.tags)}")
+      IO.puts("entities     : #{inspect(d.entities)}")
+      IO.puts("")
+    end)
+
+    {:ok, drafts}
+
+  {:error, error} ->
+    IO.inspect(error, label: "ERROR")
+    {:error, error}
+end
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+=== Fixture: 8. list-style response ===
+
+Three key reforms of the Meiji Restoration:
+
+- Abolition of the feudal han system (1871) and replacement with prefectures
+- Introduction of universal compulsory education (1872)
+- The Iwakura Mission (1871–1873), a diplomatic embassy to study Western institutions
+
+
+=== Output ===
+
+--- DraftCard 1 ---
+call_number  : MOD · 1871 · HAN-SYSTEM-ABOLITION
+type         : event
+front        : What feudal administrative system did Japan abolish in 1871 as part of the Meiji Restoration?
+back         : In 1871, the Meiji Restoration abolished the feudal han (domain) system and replaced it with prefectures, centralizing governmental control in Japan.
+tags         : ["Meiji Restoration", "Japanese Government"]
+entities     : ["Japan"]
+
+--- DraftCard 2 ---
+call_number  : MOD · 1872 · COMPULSORY-EDUCATION
+type         : event
+front        : When did Japan introduce universal compulsory education during the Meiji period?
+back         : Universal compulsory education was introduced in Japan in 1872 as part of the Meiji Restoration's modernization reforms.
+tags         : ["Meiji Restoration", "Education"]
+entities     : ["Japan"]
+
+--- DraftCard 3 ---
+call_number  : MOD · 1871 · IWAKURA-MISSION
+type         : event
+front        : What was the Iwakura Mission and when did it occur?
+back         : The Iwakura Mission (1871–1873) was a diplomatic embassy sent by the Meiji government to study Western institutions and practices, representing Japan's engagement with Western modernization.
+tags         : ["Meiji Restoration", "Diplomacy", "Western Contact"]
+entities     : ["Iwakura Mission"]
+
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+{:ok,
+ [
+   %Manillum.Archive.Cataloging.DraftCard{
+     card_type: :event,
+     drawer: :MOD,
+     date_token: "1871",
+     slug: "HAN-SYSTEM-ABOLITION",
+     front: "What feudal administrative system did Japan abolish in 1871 as part of the Meiji Restoration?",
+     back: "In 1871, the Meiji Restoration abolished the feudal han (domain) system and replaced it with prefectures, centralizing governmental control in Japan.",
+     tags: ["Meiji Restoration", "Japanese Government"],
+     entities: ["Japan"]
+   },
+   %Manillum.Archive.Cataloging.DraftCard{
+     card_type: :event,
+     drawer: :MOD,
+     date_token: "1872",
+     slug: "COMPULSORY-EDUCATION",
+     front: "When did Japan introduce universal compulsory education during the Meiji period?",
+     back: "Universal compulsory education was introduced in Japan in 1872 as part of the Meiji Restoration's modernization reforms.",
+     tags: ["Meiji Restoration", "Education"],
+     entities: ["Japan"]
+   },
+   %Manillum.Archive.Cataloging.DraftCard{
+     card_type: :event,
+     drawer: :MOD,
+     date_token: "1871",
+     slug: "IWAKURA-MISSION",
+     front: "What was the Iwakura Mission and when did it occur?",
+     back: "The Iwakura Mission (1871–1873) was a diplomatic embassy sent by the Meiji government to study Western institutions and practices, representing Japan's engagement with Western modernization.",
+     tags: ["Meiji Restoration", "Diplomacy", "Western Contact"],
+     entities: ["Iwakura Mission"]
+   }
+ ]}
+```
+
+## Run the full Gate C.1 suite
+
+This iterates every fixture and prints a digest. Pause between rounds — the
+reviewer's job is to walk through each one and rate the output, then suggest prompt
+edits. Re-run after each prompt iteration.
+
+```elixir
+for fixture <- fixtures do
+  IO.puts("\n=========================================")
+  IO.puts("=== #{fixture.label}")
+  IO.puts("=========================================\n")
+  IO.puts(fixture.text)
+  IO.puts("\n--- DraftCards ---\n")
+
+  case Manillum.Archive.extract_drafts(fixture.text) do
+    {:ok, drafts} ->
+      IO.puts("count: #{length(drafts)}")
+
+      drafts
+      |> Enum.with_index(1)
+      |> Enum.each(fn {%Manillum.Archive.Cataloging.DraftCard{} = d, i} ->
+        IO.puts(
+          "  #{i}. #{d.drawer} · #{d.date_token} · #{d.slug} (#{d.card_type})"
+        )
+
+        IO.puts("     front: #{d.front}")
+        IO.puts("     back : #{d.back}")
+        IO.puts("     tags : #{inspect(d.tags)}")
+      end)
+
+    {:error, error} ->
+      IO.inspect(error, label: "ERROR", limit: :infinity, printable_limit: :infinity)
+  end
+end
+
+:ok
+```
+
+## Reviewer checklist (per spec §5 Stream C, Gate C.1)
+
+For each fixture above, ask:
+
+* **Card count** — is the number of atomic facts produced appropriate to the source?
+  Too few = the LLM is bundling distinct facts. Too many = it's splitting a single
+  fact into pieces.
+* **Slugs sensible** — do they read as content-relevant tokens? Numeric / letter
+  suffixes (`-2`, `-A`) are a smell (§7.4 style guide).
+* **Dates correct** — does `date_token` match what the text actually says?
+  Hallucinated years are a critical failure mode.
+* **Tags reasonable** — would these tags help group the card in the Reference view?
+  1–4 is the target range.
+* **Entities identified** — does the `entities` list catch named people, places, sources
+  in the back text? Generic nouns should be omitted.
+* **Front / back atomic** — does each card stand alone? Could a reviewer see the
+  card without the conversation context and still understand it?
+
+When all 10 fixtures consistently produce good cards, sign off Gate C.1 in the
+project index and proceed to Gate C.2 (end-to-end async pipeline).
+
+## Gate C.2 — End-to-end Capture → Card flow
+
+Gate C.2 is the slice's end-to-end pipeline gate (per spec §5 Stream C and the
+Gate C.2 review packet on the project index). The cells below mirror the IEx
+verification recipe in the runbook — they exercise:
+
+1. `Manillum.Archive.submit/1` creates a `:pending` capture.
+2. The AshOban scan trigger (`where expr(status == :pending)`) picks it up
+   when drained synchronously via `AshOban.Test.schedule_and_run_triggers/1`.
+3. `RunCataloging` flips status `:pending → :cataloging → :catalogued`,
+   issues an LLM call, and persists draft Cards with `:draft` status +
+   `capture_id` set.
+4. PubSub `:cards_drafted` fires on `"user:#{user_id}:cataloging"`.
+
+> **This hits a real Anthropic call (~$0.001 per run).** No stub here — the
+> Mix standalone runtime boots the full app supervisor (Oban + PubSub
+> included), so the trigger pipeline runs against the dev DB and a live LLM.
+
+### 1. Seed a user, subscribe to the cataloging topic
+
+A fresh email per run avoids tripping the `user_email` identity if the
+notebook is re-run against the same dev DB. Subscribing on `self()` gives
+the next cell's `receive` access to the broadcast.
+
+```elixir
+email = "gate-c2-#{System.system_time(:millisecond)}@example.com"
+user = Ash.Seed.seed!(Manillum.Accounts.User, %{email: email})
+
+topic = "user:#{user.id}:cataloging"
+Phoenix.PubSub.subscribe(Manillum.PubSub, topic)
+
+%{user_id: user.id, email: email, topic: topic}
+```
+
+### 2. Submit a capture (what LiveView `+ FILE` will call)
+
+The §5 Stream C interface line in the spec writes this as
+`Manillum.Archive.create!(:submit, %{...})`; the equivalent code-interface
+call exposed on the `Manillum.Archive` domain is `submit/1`.
+
+```elixir
+{:ok, capture} =
+  Manillum.Archive.submit(%{
+    user_id: user.id,
+    source_text: """
+    Between roughly 1200 and 1150 BCE, the Bronze Age palace economies of
+    the eastern Mediterranean — Mycenaean Greece, Hittite Anatolia, and
+    Ugarit on the Syrian coast — collapsed in close succession. The
+    current consensus blames a "systems collapse" rather than a single
+    cause.
+    """,
+    scope: :whole,
+    conversation_id: Ash.UUID.generate()
+  })
+
+%{id: capture.id, status: capture.status, scope: capture.scope}
+```
+
+### 3. Drive the AshOban scan trigger synchronously
+
+`AshOban.Test.schedule_and_run_triggers/1` schedules the trigger jobs for
+`Manillum.Archive.Capture` and drains the `:cataloging` queue inline,
+returning the Oban drain result. In production the cron tick fires every
+minute; here we drain it on demand.
+
+```elixir
+result = AshOban.Test.schedule_and_run_triggers(Manillum.Archive.Capture)
+```
+
+### 4. Reload — confirm `:pending → :cataloging → :catalogued`
+
+The intermediate `:cataloging` write happens inside `RunCataloging`'s
+`before_action`; by the time the trigger drains, the row is at
+`:catalogued` (or `:failed`). `error_reason` should be `nil` on the
+happy path.
+
+```elixir
+reloaded = Ash.get!(Manillum.Archive.Capture, capture.id, authorize?: false)
+
+%{
+  status: reloaded.status,
+  error_reason: reloaded.error_reason,
+  updated_at: reloaded.updated_at
+}
+```
+
+### 5. List the draft Cards persisted with `capture_id` set
+
+```elixir
+require Ash.Query
+
+cards =
+  Manillum.Archive.Card
+  |> Ash.Query.filter(capture_id == ^capture.id)
+  |> Ash.read!(authorize?: false)
+
+cards
+|> Enum.map(fn card ->
+  %{
+    status: card.status,
+    capture_id: card.capture_id,
+    call_number: "#{card.drawer} · #{card.date_token} · #{card.slug}",
+    front: card.front
+  }
+end)
+```
+
+### 6. Receive the `:cards_drafted` broadcast
+
+`schedule_and_run_triggers/1` is synchronous, so the broadcast has
+already fired by the time we get here. A short timeout covers any tiny
+PubSub delivery latency.
+
+```elixir
+receive do
+  {:cards_drafted, payload} ->
+    IO.puts("✓ :cards_drafted received")
+    IO.inspect(payload, label: "payload")
+    {:received, payload}
+
+  {:cards_drafting_failed, payload} ->
+    IO.puts("✗ :cards_drafting_failed — pipeline error path was hit")
+    IO.inspect(payload, label: "failure")
+    {:failed, payload}
+after
+  500 ->
+    IO.puts("✗ no broadcast within 500ms — pipeline did not reach the broadcast step")
+    :timeout
+end
+```
+
+### 7. Gate C.2 sign-off checklist
+
+For each cell above, confirm:
+
+- **§ 2** — `submit/1` returned `{:ok, %Capture{status: :pending}}`.
+- **§ 3** — `schedule_and_run_triggers/1` reported `success: 1` (or more)
+  with no failures / discards.
+- **§ 4** — the reloaded capture's `status` is `:catalogued` and
+  `error_reason` is `nil` (happy path) — or `:catalogued` with a
+  `"collisions or create errors"` note if any per-draft skips fired.
+- **§ 5** — at least one persisted Card with `status: :draft` and
+  `capture_id` matching the submitted capture.
+- **§ 6** — `{:cards_drafted, payload}` arrived with the expected
+  `capture_id`, `conversation_id`, and a non-empty `draft_ids` list.
+
+When all five pass, sign off Gate C.2 on the project index and merge
+the slice. The slug-collision skip path and `:cards_drafting_failed`
+broadcast are already exercised by the test suite
+(`test/manillum/archive/capture_test.exs`); re-running them here is
+optional — pre-seed a colliding `Card` (same `user_id / drawer /
+date_token / slug` as the LLM will produce) and observe `error_reason`
+populate while no new draft persists.

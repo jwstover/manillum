@@ -19,6 +19,17 @@ defmodule Manillum.Archive do
       define :propose_call_number, action: :propose_call_number
     end
 
-    resource Manillum.Archive.Capture
+    resource Manillum.Archive.Capture do
+      # Public submit entry point — LiveView calls this on `+ FILE` and
+      # walks away. The AshOban trigger picks the row up by status and
+      # drives the rest. Spec §5 Stream C interface line refers to this
+      # as `Manillum.Archive.create!(:submit, %{...})`; the equivalent
+      # idiomatic call is `Manillum.Archive.submit!(%{...})`.
+      define :submit, action: :submit
+
+      # Sync prompt-backed action exposed for `/notebooks/cataloging.livemd`
+      # iteration and for tests. Bypasses Oban + DB entirely.
+      define :extract_drafts, action: :extract_drafts, args: [:source_text]
+    end
   end
 end
