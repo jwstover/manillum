@@ -98,11 +98,14 @@ defmodule Manillum.Archive.Cataloging.Prompt do
       the Reference view.
     - **entities**: named entities (people, places, sources) referenced
       in the **back** text *other than the card's own subject*. These
-      seed autostub reference cards for cross-linking, so the card's
-      own slug-subject is redundant — exclude it. Include the other
-      named actors, places, and sources the back mentions (e.g. a card
-      about the Iwakura Mission whose back mentions the Meiji government
-      and Japan should list `["Meiji government", "Japan"]`, not
+      get persisted as denormalized search/filter metadata on the card
+      and seed the reactive cross-reference scan that links this card
+      to any *existing* cards it mentions (we do not create speculative
+      placeholder cards from this list). The card's own slug-subject
+      would self-match, so exclude it. Include the other named actors,
+      places, and sources the back mentions (e.g. a card about the
+      Iwakura Mission whose back mentions the Meiji government and Japan
+      should list `["Meiji government", "Japan"]`, not
       `["Iwakura Mission"]`). Skip generic nouns and unnamed groups.
 
     ## Output rules

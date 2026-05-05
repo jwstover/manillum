@@ -1,0 +1,306 @@
+# Archive — Gate B.2 conflict-resolution review
+
+## Why this notebook exists
+
+Gate B.2 (per spec §5 Stream B) is the slice's review surface for the conflict-resolution
+mechanics that define the product's filing feel: slug collisions, retroactive renames,
+case-insensitive tag matching, and link semantics (symmetric `:see_also` + directional
+`:references` / `:derived_from`). The reviewer walks each scenario below against a clean
+dev DB, eyeballs the result, and ticks the sign-off checklist at the bottom.
+
+This is the **interactive Gate B.2 surface**. Behavior is also covered in the test suite
+(`test/manillum/archive/{tag,link,rename}_test.exs`); this notebook is for the manual
+sign-off pass that confirms the API feels right end-to-end.
+
+## Connecting
+
+Run Livebook on the host (not in Docker — see the 2026-05-05 vault note). Start the app
+with `iex --name manillum@127.0.0.1 --cookie <cookie> -S mix phx.server`, then point
+Livebook's **Runtime → Mix standalone** at this repo. The cells below assume the full
+app supervisor is up (PubSub + Repo + Oban). No external API calls are made — every
+scenario is purely DB / PubSub.
+
+## Smoke check: modules load
+
+```elixir
+[
+  Manillum.Archive,
+  Manillum.Archive.Card,
+  Manillum.Archive.Card.CallNumberProposal,
+  Manillum.Archive.CallNumberRedirect,
+  Manillum.Archive.CardTag,
+  Manillum.Archive.Link,
+  Manillum.Archive.Tag
+]
+|> Enum.each(fn mod -> IO.puts("loaded: #{inspect(mod)}") end)
+```
+
+## Setup — seed a user, subscribe to the archive topic
+
+A fresh email per run avoids tripping the `users.email` identity if the notebook is
+re-run against the same dev DB. Subscribing on `self()` lets the rename scenario `flush`
+the `{:card_renamed, old, new}` broadcast in a later cell.
+
+```elixir
+email = "gate-b2-#{System.system_time(:millisecond)}@example.com"
+user = Ash.Seed.seed!(Manillum.Accounts.User, %{email: email})
+
+archive_topic = "user:#{user.id}:archive"
+Phoenix.PubSub.subscribe(Manillum.PubSub, archive_topic)
+
+%{user_id: user.id, email: email, archive_topic: archive_topic}
+```
+
+## Scenario A — slug collision is detected (re-verifies Slice 3 coverage)
+
+File a `CAESAR` card; ask `:propose_call_number` for the same segments; confirm the
+returned proposal has `status: :collision` and the existing card's id. Slice 3 covered
+this in tests; we re-verify here as a regression guard now that more actions touch the
+identity (rename).
+
+```elixir
+{:ok, caesar} =
+  Manillum.Archive.draft_card(%{
+    user_id: user.id,
+    drawer: :ANT,
+    date_token: "49BC",
+    slug: "CAESAR",
+    card_type: :person,
+    front: "Who was Caesar?",
+    back: "A Roman general."
+  })
+
+{:ok, proposal} =
+  Manillum.Archive.propose_call_number(%{
+    user_id: user.id,
+    drawer: :ANT,
+    date_token: "49BC",
+    slug: "CAESAR",
+    card_type: :person
+  })
+
+%{
+  proposal_status: proposal.status,
+  existing_card_id: proposal.existing_card_id,
+  matches_caesar?: proposal.existing_card_id == caesar.id
+}
+```
+
+Expected output:
+
+```
+%{proposal_status: :collision, existing_card_id: <caesar.id>, matches_caesar?: true}
+```
+
+## Scenario B — `Tag.find_or_create` is case-insensitive
+
+Two calls with different casings should return the same `tag.id`, and the persisted
+`name` should preserve the **first** call's casing.
+
+```elixir
+{:ok, first} = Manillum.Archive.find_or_create_tag(user.id, "Bronze Age")
+{:ok, second} = Manillum.Archive.find_or_create_tag(user.id, "bronze age")
+{:ok, third} = Manillum.Archive.find_or_create_tag(user.id, "BRONZE AGE")
+
+%{
+  same_id?: first.id == second.id and first.id == third.id,
+  first_call_name: first.name,
+  second_call_returned_name: second.name,
+  third_call_returned_name: third.name,
+  normalized_name: first.normalized_name
+}
+```
+
+Expected: `same_id?: true`, all three `name` fields read `"Bronze Age"` (first call's
+casing wins), `normalized_name: "bronze age"`.
+
+## Scenario C — Link semantics (see_also symmetric, others directional)
+
+File two cards (`COLLAPSE` and `SEA-PEOPLES`). First link them with `:see_also` —
+the action canonicalizes the pair so a single row covers both directions, and
+`Archive.see_also_partner_ids/1` surfaces the partner from either side. Then
+add a `:references` edge to confirm directional kinds still preserve from→to
+ordering on `outgoing_links` / `incoming_links`.
+
+```elixir
+{:ok, collapse} =
+  Manillum.Archive.draft_card(%{
+    user_id: user.id,
+    drawer: :ANT,
+    date_token: "1177BC",
+    slug: "COLLAPSE",
+    card_type: :event,
+    front: "What was the Bronze Age collapse?",
+    back: "The systems collapse of the eastern Mediterranean palace economies, ~1200–1150 BCE."
+  })
+
+{:ok, sea_peoples} =
+  Manillum.Archive.draft_card(%{
+    user_id: user.id,
+    drawer: :ANT,
+    date_token: "1177BC",
+    slug: "SEA-PEOPLES",
+    card_type: :concept,
+    front: "Who were the Sea Peoples?",
+    back: "A loose confederation cited in Egyptian sources around the time of the Bronze Age collapse."
+  })
+
+{:ok, see_also_link} =
+  Manillum.Archive.link(%{
+    from_card_id: collapse.id,
+    to_card_id: sea_peoples.id,
+    kind: :see_also
+  })
+
+# Same pair, reverse direction — canonicalization collapses to the same row.
+{:ok, see_also_reverse} =
+  Manillum.Archive.link(%{
+    from_card_id: sea_peoples.id,
+    to_card_id: collapse.id,
+    kind: :see_also
+  })
+
+# Directional kind: from→to ordering is preserved.
+{:ok, _refs} =
+  Manillum.Archive.link(%{
+    from_card_id: collapse.id,
+    to_card_id: sea_peoples.id,
+    kind: :references
+  })
+
+collapse_loaded = Ash.load!(collapse, [:outgoing_links, :incoming_links])
+sea_peoples_loaded = Ash.load!(sea_peoples, [:outgoing_links, :incoming_links])
+
+%{
+  see_also_same_row?: see_also_link.id == see_also_reverse.id,
+  collapse_see_also_partners: Manillum.Archive.see_also_partner_ids(collapse.id),
+  sea_peoples_see_also_partners: Manillum.Archive.see_also_partner_ids(sea_peoples.id),
+  collapse_outgoing_kinds: Enum.map(collapse_loaded.outgoing_links, & &1.kind) |> Enum.sort(),
+  collapse_incoming_kinds: Enum.map(collapse_loaded.incoming_links, & &1.kind) |> Enum.sort(),
+  sea_peoples_outgoing_kinds:
+    Enum.map(sea_peoples_loaded.outgoing_links, & &1.kind) |> Enum.sort(),
+  sea_peoples_incoming_kinds:
+    Enum.map(sea_peoples_loaded.incoming_links, & &1.kind) |> Enum.sort()
+}
+```
+
+Expected:
+
+* `see_also_same_row?: true` — A→B and B→A returned the same row id.
+* `collapse_see_also_partners: [<sea_peoples.id>]` and
+  `sea_peoples_see_also_partners: [<collapse.id>]` — symmetric view from
+  either side.
+* `collapse_outgoing_kinds: [:references]` and
+  `sea_peoples_incoming_kinds: [:references]` — the directional `:references`
+  edge is on the from-side outgoing and the to-side incoming, as before.
+* The `:see_also` row appears on **one** side's `outgoing_links` and the other
+  side's `incoming_links` depending on which UUID compared smaller. That's
+  the canonical-storage detail callers shouldn't reason about — use
+  `see_also_partner_ids/1` instead.
+
+## Scenario D — retroactive rename produces a redirect
+
+Rename the `CAESAR` card seeded in Scenario A to `JULIUS-CAESAR`. The `:rename` action
+broadcasts `{:card_renamed, old, new}` on the archive topic; we then `receive` it. After
+the rename, file a new `OCTAVIAN` card and confirm `get_card_by_call_number/2` follows
+the redirect from the old `CAESAR` segments to the renamed card.
+
+```elixir
+{:ok, renamed} = Manillum.Archive.rename_card(caesar, %{slug: "JULIUS-CAESAR"})
+
+# Drain the broadcast we subscribed to in the setup cell.
+broadcast =
+  receive do
+    {:card_renamed, old, new} -> {:ok, old, new}
+  after
+    500 -> :no_broadcast
+  end
+
+%{renamed_slug: renamed.slug, broadcast: broadcast}
+```
+
+Expected: `renamed_slug: "JULIUS-CAESAR"`, `broadcast: {:ok, "ANT · 49BC · CAESAR", "ANT · 49BC · JULIUS-CAESAR"}`.
+
+```elixir
+{:ok, octavian} =
+  Manillum.Archive.draft_card(%{
+    user_id: user.id,
+    drawer: :ANT,
+    date_token: "49BC",
+    slug: "OCTAVIAN",
+    card_type: :person,
+    front: "Who was Octavian?",
+    back: "Caesar's adopted heir, later Augustus."
+  })
+
+# Redirect lookup: the old call_number resolves to the renamed card.
+{:ok, found_via_old} = Manillum.Archive.get_card_by_call_number(user.id, "ANT · 49BC · CAESAR")
+
+# Direct lookup of the new card by its current call_number.
+{:ok, found_via_new} =
+  Manillum.Archive.get_card_by_call_number(user.id, "ANT · 49BC · JULIUS-CAESAR")
+
+%{
+  found_via_old_id: found_via_old.id,
+  found_via_old_slug: found_via_old.slug,
+  found_via_new_id: found_via_new.id,
+  octavian_id: octavian.id,
+  redirect_resolves?: found_via_old.id == found_via_new.id
+}
+```
+
+Expected: `redirect_resolves?: true`, `found_via_old_slug: "JULIUS-CAESAR"`, and the
+returned card's id matches the original `caesar.id` (not `octavian.id`).
+
+## Scenario E — reactive cross-reference linking (deferred)
+
+Pre-emptive autostub creation was dropped (see project decision callout, 2026-05-05).
+Cross-reference Links are now created **reactively at file-time**: when a card is filed,
+the system scans both directions — forward (this card's `entities` → existing cards'
+identifying fields → outgoing `:references` links) and backward (this card's slug + front
+→ existing cards' `entities` → incoming links from each match) — using vector similarity
+(M-24's embedding index) plus an LLM filter step to keep only links that are actually
+worth surfacing.
+
+That work lands in **M-34**, gated on the embedding index from M-24. Until then the
+`Card.entities` attribute is simply a denormalized search/filter list populated by the
+cataloging pipeline; nothing in the running app reads it as a link source yet.
+
+## Scenario F — semantic dup detection (deferred)
+
+Semantic-duplicate detection (embedding `back` text and looking up cosine-similar
+existing cards via `Archive.find_duplicates/2`) is deferred to **M-24** (Slice 6 —
+dup-detection follow-on). The vectorize block on `Card`, the pgvector HNSW index, and
+the `Archive.find_duplicates/2` code interface all land in that slice; until they're in
+place, this scenario is intentionally not runnable here.
+
+When M-24 lands, the natural fixture is two cards with very similar `back` text but
+different slugs (e.g. one card describing the Bronze Age collapse via "systems
+collapse" framing, another describing it via "Sea Peoples" framing). `find_duplicates`
+should surface the second as a candidate when filing the first.
+
+## Sign-off checklist
+
+For each scenario above, confirm the expected output landed:
+
+* [ ] **Scenario A** — `propose_call_number` returned `status: :collision` with
+  `existing_card_id` matching the seeded CAESAR card.
+* [ ] **Scenario B** — three calls with different casings returned the same `tag.id`;
+  the first call's casing (`"Bronze Age"`) is preserved on the persisted row;
+  `normalized_name` is `"bronze age"`.
+* [ ] **Scenario C** — `:see_also` reverse call returned the same row id as the
+  forward call; `see_also_partner_ids/1` returns the other card from either side;
+  the `:references` edge is on `COLLAPSE.outgoing_links` and
+  `SEA-PEOPLES.incoming_links` (directional kinds preserve from→to ordering).
+* [ ] **Scenario D** — rename returned `:ok` with the new slug; the
+  `{:card_renamed, "ANT · 49BC · CAESAR", "ANT · 49BC · JULIUS-CAESAR"}` broadcast
+  arrived; `get_card_by_call_number` follows the redirect from the old name to the
+  renamed card; the new `OCTAVIAN` card resolves directly.
+* [ ] **Scenario E** — acknowledged as deferred to M-34 (reactive
+  cross-reference linking; depends on M-24).
+* [ ] **Scenario F** — acknowledged as deferred to M-24.
+
+When all six tick, sign off **Gate B.2** on the project index and proceed to M-24
+(dup-detection follow-on) and M-28 (filing tray + chat-to-card loop).
+
+> **Gate B.2 approved — proceed to M-24 / M-28.** _(reviewer signs above this line)_

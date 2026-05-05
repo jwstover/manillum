@@ -26,7 +26,7 @@ defmodule Manillum.Archive.Card do
   end
 
   actions do
-    defaults [:read]
+    defaults [:read, :destroy]
 
     create :draft do
       description """
@@ -43,7 +43,8 @@ defmodule Manillum.Archive.Card do
         :slug,
         :card_type,
         :front,
-        :back
+        :back,
+        :entities
       ]
 
       change set_attribute(:status, :draft)
@@ -72,6 +73,25 @@ defmodule Manillum.Archive.Card do
       end
 
       change set_attribute(:status, :filed)
+    end
+
+    update :rename do
+      description """
+      Change one or more of `drawer` / `date_token` / `slug`. Validates the
+      new combination against the `:unique_call_number` identity, writes a
+      `Manillum.Archive.CallNumberRedirect` for the **old** segments
+      pointing at this card, and broadcasts `{:card_renamed, old, new}` on
+      `"user:\#{user_id}:archive"` per spec §7.3.
+
+      Acceptable on cards in any status — the rename mechanic is what
+      makes retroactive disambiguation possible (per §7.4 / spec note on
+      `JULIUS-CAESAR` flow).
+      """
+
+      accept [:drawer, :date_token, :slug]
+      require_atomic? false
+
+      change Manillum.Archive.Card.Changes.Rename
     end
 
     action :propose_call_number, Manillum.Archive.Card.CallNumberProposal do
@@ -155,6 +175,21 @@ defmodule Manillum.Archive.Card do
       public? true
     end
 
+    attribute :entities, {:array, :string} do
+      default []
+      allow_nil? false
+      public? true
+
+      description """
+      Proper-noun mentions extracted from the back text by the cataloging
+      pipeline (named actors, places, sources — excluding the card's own
+      subject). Denormalized search/filter metadata; consumed by the
+      reactive cross-reference scan at file-time. Not link targets — the
+      project deliberately does not create speculative Card stubs from
+      this list.
+      """
+    end
+
     create_timestamp :inserted_at
     update_timestamp :updated_at
   end
@@ -167,6 +202,20 @@ defmodule Manillum.Archive.Card do
 
     belongs_to :capture, Manillum.Archive.Capture do
       public? true
+    end
+
+    many_to_many :tags, Manillum.Archive.Tag do
+      through Manillum.Archive.CardTag
+      source_attribute_on_join_resource :card_id
+      destination_attribute_on_join_resource :tag_id
+    end
+
+    has_many :outgoing_links, Manillum.Archive.Link do
+      destination_attribute :from_card_id
+    end
+
+    has_many :incoming_links, Manillum.Archive.Link do
+      destination_attribute :to_card_id
     end
   end
 
