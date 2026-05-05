@@ -35,7 +35,7 @@ defmodule ManillumWeb.ConversationsLive do
               class="conversation__rail-link"
             >
               <span class="conversation__rail-qry">
-                № {pad_qry(conversation.query_number)}
+                {pad_qry(conversation.query_number)}
               </span>
               <span class="conversation__rail-title">
                 {rail_title(conversation.title)}
@@ -72,8 +72,94 @@ defmodule ManillumWeb.ConversationsLive do
         <div
           id="message-container"
           phx-update="stream"
+          phx-hook=".ConversationScroll"
           class="conversation__thread"
         >
+          <script :type={Phoenix.LiveView.ColocatedHook} name=".ConversationScroll">
+            // Toggle `is-scrolled` on the outer `.conversation` element
+            // when the thread has been scrolled away from its resting
+            // position (newest message at the bottom edge). Used by
+            // `assets/css/components/conversation.css` to compact the era
+            // band and convo header while the user reads older messages.
+            //
+            // The thread is `flex-direction: column-reverse`, so the
+            // resting position reports `scrollTop ≈ 0` in Chrome/Safari
+            // and the scrollTop becomes negative (or positive on Firefox)
+            // as the user moves away from it. `Math.abs(scrollTop)` is
+            // the browser-agnostic "distance from resting" probe.
+            //
+            // Two guardrails keep the toggle stable while the chrome's
+            // CSS transition reflows the thread:
+            //
+            // 1. Hysteresis with absorption-aware entry threshold. When
+            //    `is-scrolled` is added the convo header collapses,
+            //    `.conversation__main`'s flex children reflow, the
+            //    thread (flex: 1, column-reverse) grows by the convo
+            //    header's full height (~84px), and scrollTop swings
+            //    sharply toward 0. A single threshold drops back below
+            //    the boundary mid-transition and the chrome flickers
+            //    open/closed for a few cycles before damping out. The
+            //    fix is a hysteresis dead-zone the absorption can't
+            //    cross: pick `ENTER_THRESHOLD` > collapsed-element-
+            //    height + `EXIT_THRESHOLD` so the post-absorption
+            //    scrollTop always lands in the "stay compact" zone.
+            //    For an ~84px convo header, ENTER 120 / EXIT 24 means
+            //    a 120px scroll absorbs to ~-36, well outside the 24px
+            //    exit boundary. Smaller scrolls don't trigger compact
+            //    at all.
+            //
+            // 2. Toggle lock + post-lock recheck. After any class flip
+            //    we ignore scroll events for the duration of the CSS
+            //    transition (~260ms) so layout churn during the
+            //    transition can't fire another flip. After the lock
+            //    lifts we re-evaluate once — if no scroll events have
+            //    fired since (scrollTop landed at rest mid-lock), this
+            //    catches it; otherwise normal scroll handling resumes.
+            const ENTER_THRESHOLD = 120;
+            const EXIT_THRESHOLD = 24;
+            const TOGGLE_LOCK_MS = 260;
+
+            export default {
+              mounted() {
+                this.root = this.el.closest(".conversation");
+                this.lockedUntil = 0;
+                this.recheckTimer = null;
+                this.onScroll = () => {
+                  if (!this.root) return;
+                  if (performance.now() < this.lockedUntil) return;
+                  const distance = Math.abs(this.el.scrollTop);
+                  const isScrolled = this.root.classList.contains("is-scrolled");
+                  const next = isScrolled
+                    ? distance > EXIT_THRESHOLD
+                    : distance > ENTER_THRESHOLD;
+                  if (next !== isScrolled) {
+                    this.root.classList.toggle("is-scrolled", next);
+                    this.lockedUntil = performance.now() + TOGGLE_LOCK_MS;
+                    // After the lock lifts, re-evaluate once. If the
+                    // transition's layout shift left scrollTop in a
+                    // position that should trigger another toggle (e.g.
+                    // the user briefly scrolled into the entry zone but
+                    // settled back at rest), this catches it. Without
+                    // the recheck, no further scroll events fire to wake
+                    // the listener and the chrome can stay in the wrong
+                    // state at the final scroll position.
+                    clearTimeout(this.recheckTimer);
+                    this.recheckTimer = setTimeout(this.onScroll, TOGGLE_LOCK_MS + 16);
+                  }
+                };
+                this.el.addEventListener("scroll", this.onScroll, { passive: true });
+                // Re-evaluate on mount: a navigation between conversations
+                // can land the thread at a non-zero scroll position before
+                // any user input fires the listener.
+                this.onScroll();
+              },
+              destroyed() {
+                this.el.removeEventListener("scroll", this.onScroll);
+                clearTimeout(this.recheckTimer);
+                if (this.root) this.root.classList.remove("is-scrolled");
+              },
+            };
+          </script>
           <%= for {dom_id, message} <- @streams.messages do %>
             <.message
               id={dom_id}

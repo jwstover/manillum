@@ -597,7 +597,7 @@ defmodule ManillumWeb.ManillumComponents do
     <header class="convo_header">
       <div>
         <span class="qry_stamp">
-          QRY № {format_qry(@query_number)}<span :if={@exchanges}>
+          QRY {format_qry(@query_number)}<span :if={@exchanges}>
             · {@exchanges} exchanges</span>
         </span>
         <h1 class="convo_header__title">

@@ -22,8 +22,17 @@
 .conversation {
   display: grid;
   grid-template-columns: 15rem 1fr;
-  min-height: 100dvh;
-  max-height: 100dvh;
+  /* Pin the grid to viewport height and force the (implicit) row to fit
+   * inside it. Without `grid-template-rows: minmax(0, 1fr)` the row's
+   * intrinsic size tracks its content, so a long transcript pushes
+   * `.conversation__main` past the 100dvh container — the topbar / era
+   * band / convo header / composer scroll along with the thread instead
+   * of staying pinned. `minmax(0, 1fr)` allocates the full container
+   * height to the row but allows it to shrink below content-min, which
+   * is the cue the inner flex column needs to honour `min-height: 0` on
+   * `.conversation__thread` and start scrolling internally. */
+  grid-template-rows: minmax(0, 1fr);
+  height: 100dvh;
   background: var(--color-linen);
 }
 
@@ -46,6 +55,41 @@
    * stays anchored at the live edge as content streams in. */
   display: flex;
   flex-direction: column-reverse;
+}
+
+/* ── Compact-on-scroll chrome ──────────────────────────────────────────
+ * When the thread is scrolled away from its resting position (newest
+ * message at the bottom edge, scrollTop ≈ 0 in column-reverse), the
+ * `ConversationScroll` colocated hook flips an `is-scrolled` class on
+ * `.conversation`. The convo header collapses entirely (the user
+ * remembers their conversation topic; the title is redundant context
+ * while reading), reclaiming ~80px for the transcript. The era band
+ * stays at full size — the timeline is the persistent navigational
+ * context the user likely wants to reference while scrolling history.
+ * The topbar and composer stay full-size — identity + affordance.
+ *
+ * Transitions live on the elements at full size; the `is-scrolled`
+ * variants drive them. Easing is short (0.18–0.22s) to avoid lag.
+ * ────────────────────────────────────────────────────────────────── */
+
+.convo_header {
+  transition:
+    max-height 0.22s ease,
+    padding 0.22s ease,
+    opacity 0.18s ease,
+    border-bottom-color 0.22s ease;
+  overflow: hidden;
+  /* A generous default that covers the kicker + title + opened stamp;
+   * the `max-height` transition hooks into this when collapsing. */
+  max-height: 12rem;
+}
+
+.conversation.is-scrolled .convo_header {
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  opacity: 0;
+  border-bottom-color: transparent;
 }
 
 /* ── Left rail — past conversations grouped under a kicker ─────────── */
