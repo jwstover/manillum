@@ -1,0 +1,110 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   .toast — Manillum-style flash / notification. NOT DaisyUI's toast
+   (which is too generic). A linen surface with an oxblood top-rule, mono
+   "filed" label, italic Newsreader body. Stacks bottom-right.
+
+   States via modifier class:
+     .toast--info       (default)            ink top-rule
+     .toast--ok         filing succeeded     forest top-rule
+     .toast--warn       collision / dup      brass top-rule
+     .toast--error      filing failed        oxblood top-rule, bg paper-deep
+   ───────────────────────────────────────────────────────────────────── */
+
+.toast_stack {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  z-index: 50;
+  pointer-events: none;
+}
+
+.toast {
+  pointer-events: auto;
+  min-width: 18rem;
+  max-width: 22rem;
+  background: var(--color-paper-light);
+  border: 1px solid var(--color-rule-strong);
+  border-top: 3px solid var(--color-ink);
+  padding: 0.75rem 1rem 0.875rem;
+  box-shadow: var(--card-shadow-lifted);
+  font-family: var(--font-body);
+}
+
+.toast--ok {
+  border-top-color: var(--color-forest-bright);
+}
+
+.toast--warn {
+  border-top-color: var(--color-brass-bright);
+  background: rgba(184, 137, 58, 0.10);
+}
+
+.toast--error {
+  border-top-color: var(--color-oxblood-bright);
+  background: var(--color-paper-deep);
+}
+
+.toast__kicker {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-xs);
+  letter-spacing: var(--tracking-mono-wide);
+  text-transform: uppercase;
+  color: var(--color-ink-faint);
+  margin-bottom: 0.25rem;
+}
+
+.toast--ok .toast__kicker {
+  color: var(--color-forest-bright);
+}
+
+.toast--warn .toast__kicker {
+  color: var(--color-brass-bright);
+}
+
+.toast--error .toast__kicker {
+  color: var(--color-oxblood-bright);
+}
+
+.toast__title {
+  font-family: var(--font-display);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  line-height: 1.25;
+  color: var(--color-ink);
+}
+
+.toast__body {
+  font-family: var(--font-body);
+  font-style: italic;
+  font-size: 0.8125rem;
+  color: var(--color-ink-soft);
+  line-height: 1.45;
+  margin-top: 0.25rem;
+}
+
+.toast__close {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  background: transparent;
+  border: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-xs);
+  color: var(--color-ink-faint);
+  letter-spacing: var(--tracking-mono);
+  cursor: pointer;
+  padding: 0.125rem 0.375rem;
+}
+
+.toast__close:hover {
+  color: var(--color-ink);
+}
+
+.toast [class^="hero-"] {
+  width: 0.875rem;
+  height: 0.875rem;
+  vertical-align: -0.125em;
+}

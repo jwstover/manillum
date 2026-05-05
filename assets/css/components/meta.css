@@ -1,0 +1,58 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   .meta_label — the small mono kicker that appears above titles and on
+   metadata strips. Uppercase, generous tracking, optional leading bullet.
+   Variants by colour: ink-faint (default), oxblood, brass, forest.
+
+   .qry_stamp — the QRY № provenance ribbon. Mono, oxblood, with
+   small bullet preceding.
+   ───────────────────────────────────────────────────────────────────── */
+
+.meta_label {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-xs);
+  letter-spacing: var(--tracking-mono-extra);
+  color: var(--color-ink-faint);
+  text-transform: uppercase;
+  display: inline-block;
+}
+
+.meta_label--oxblood { color: var(--color-oxblood); }
+.meta_label--forest  { color: var(--color-forest); }
+.meta_label--brass   { color: var(--color-brass); }
+.meta_label--ink     { color: var(--color-ink); }
+
+.meta_label--display-kicker {
+  letter-spacing: var(--tracking-mono-display);
+  font-size: var(--text-mono-xs);
+}
+
+.qry_stamp {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-xs);
+  letter-spacing: var(--tracking-mono);
+  color: var(--color-oxblood);
+  text-transform: uppercase;
+}
+
+.qry_stamp::before {
+  content: "● ";
+  margin-right: 0.125rem;
+}
+
+/* The italic Newsreader caption used under images and as asides */
+.caption {
+  font-family: var(--font-body);
+  font-style: italic;
+  font-size: var(--text-body-sm);
+  color: var(--color-ink-faint);
+  line-height: 1.45;
+}
+
+/* "On this day" / display kicker — wider tracking */
+.kicker {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-xs);
+  letter-spacing: var(--tracking-mono-display);
+  text-transform: uppercase;
+  color: var(--color-oxblood);
+}

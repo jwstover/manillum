@@ -1,0 +1,48 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   .call_number — boxed mono identifier. The library-card slug.
+   The only place where IBM Plex Mono shows up "loud": uppercase, generous
+   tracking, oxblood ink, oxblood 1.5px box. Reads as a piece of stamped
+   metadata, not as code.
+
+   Variants:
+     .call_number--forest    forest border for verso/answer side
+     .call_number--brass     brass border for "looks like duplicate" warnings
+     .call_number--inline    no box, just the typography (used in body text)
+   ───────────────────────────────────────────────────────────────────── */
+
+.call_number {
+  display: inline-block;
+  padding: 0.1875rem 0.5rem;
+  border: 1.5px solid var(--color-oxblood);
+  color: var(--color-oxblood);
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-xs);
+  letter-spacing: var(--tracking-mono-wide);
+  font-weight: 500;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.call_number--forest {
+  border-color: var(--color-forest);
+  color: var(--color-forest);
+}
+
+.call_number--brass {
+  border-color: var(--color-brass);
+  color: var(--color-brass);
+}
+
+.call_number--inline {
+  border: 0;
+  padding: 0;
+  letter-spacing: var(--tracking-mono-tight);
+}
+
+/* Three-segment dot separator — preserves visual rhythm even when the
+   slug is long, and renders correctly when the segments wrap. */
+.call_number__sep {
+  display: inline-block;
+  margin-inline: 0.25rem;
+  opacity: 0.7;
+}

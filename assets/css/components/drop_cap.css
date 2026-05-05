@@ -1,0 +1,36 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   .drop_cap — oxblood Spectral initial that floats on the first paragraph
+   of an editorial response. Manillum's drop-caps are *literal* drop-caps:
+   they sit inside the paragraph (float: left), not above it.
+
+   Sizes match their host:
+     .drop_cap                 default — body paragraph (32px)
+     .drop_cap--lg             review verso (46px)
+     .drop_cap--xl             Today lead (46px+)
+     .drop_cap--sm             card-list / sidebar items (28px)
+   ───────────────────────────────────────────────────────────────────── */
+
+.drop_cap {
+  font-family: var(--font-display);
+  font-size: 2rem;
+  font-weight: 600;
+  line-height: var(--leading-cap);
+  float: left;
+  margin-right: 0.375rem;
+  margin-top: 0.125rem;
+  color: var(--color-oxblood);
+}
+
+.drop_cap--lg {
+  font-size: 2.875rem;
+  margin-right: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.drop_cap--xl {
+  font-size: 2.875rem;
+}
+
+.drop_cap--sm {
+  font-size: 1.75rem;
+}

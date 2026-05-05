@@ -1,0 +1,73 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   .topbar — Manillum wordmark + tabs + meta. Persistent app chrome.
+   Three regions, baseline-aligned: brand on the left, italic Newsreader
+   tabs (active tab in Spectral with a 1.5px oxblood underline) in the
+   centre, mono meta on the right.
+   ───────────────────────────────────────────────────────────────────── */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.875rem var(--margin-page-x) 0.75rem;
+  border-bottom: 1px solid var(--color-rule);
+  background: var(--color-linen);
+}
+
+.topbar__brand {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+}
+
+.topbar__wordmark {
+  font-family: var(--font-display);
+  font-size: var(--text-display-sm);
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  color: var(--color-ink);
+}
+
+.topbar__tagline {
+  font-family: var(--font-body);
+  font-size: 0.875rem;
+  font-style: italic;
+  color: var(--color-ink-faint);
+}
+
+.topbar__nav {
+  display: flex;
+  gap: 1.75rem;
+  font-family: var(--font-body);
+  font-size: 0.90625rem;
+  color: var(--color-ink-faint);
+  font-style: italic;
+}
+
+.topbar__nav a {
+  color: inherit;
+  text-decoration: none;
+  padding-bottom: 0.1875rem;
+  border-bottom: 1.5px solid transparent;
+  transition: color 0.12s ease;
+}
+
+.topbar__nav a:hover {
+  color: var(--color-ink-soft);
+}
+
+.topbar__nav a[aria-current="page"] {
+  color: var(--color-ink);
+  font-style: normal;
+  font-family: var(--font-display);
+  font-weight: 500;
+  border-bottom-color: var(--color-oxblood);
+}
+
+.topbar__meta {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-xs);
+  color: var(--color-ink-faint);
+  letter-spacing: var(--tracking-mono-wide);
+  text-transform: uppercase;
+}

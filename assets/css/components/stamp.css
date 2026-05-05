@@ -1,0 +1,65 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   .stamp — square mono badge tilted ~8°. Sits on the card recto in the
+   top-right corner. Reads as a rubber stamp: faded oxblood-soft ink,
+   2px border, 9-10px Plex Mono inside. Multi-line text is centered.
+
+   Variants:
+     .stamp--upright      no rotation (used for "DRAFT", inline meta)
+     .stamp--small        smaller box for tray badges
+     .stamp--filled       filled oxblood with paper-light text — used for
+                          provenance ribbons on the corner of selected
+                          passages ("F · save it", "FROM QRY № 0089")
+   ───────────────────────────────────────────────────────────────────── */
+
+.stamp {
+  display: grid;
+  place-items: center;
+  width: var(--stamp-size);
+  height: var(--stamp-size);
+  border: 2px solid var(--color-oxblood-soft);
+  color: var(--color-oxblood-soft);
+  font-family: var(--font-mono);
+  font-size: 0.5625rem;
+  letter-spacing: var(--tracking-mono-tight);
+  text-align: center;
+  line-height: 1.2;
+  text-transform: uppercase;
+  transform: rotate(var(--stamp-tilt));
+  opacity: 0.85;
+  background: transparent;
+}
+
+.stamp--upright {
+  transform: rotate(0deg);
+}
+
+.stamp--small {
+  width: 2.5rem;
+  height: 2.5rem;
+  font-size: 0.5rem;
+}
+
+.stamp--filled {
+  background: var(--color-oxblood);
+  color: var(--color-paper-light);
+  border-color: var(--color-oxblood);
+  opacity: 1;
+}
+
+.stamp--ribbon {
+  /* The little provenance label that sits flush against a card's top-right
+     corner — not tilted, full-strength, paper-light on oxblood */
+  display: inline-block;
+  padding: 0.1875rem 0.5625rem;
+  background: var(--color-oxblood);
+  color: var(--color-paper-light);
+  font-family: var(--font-mono);
+  font-size: 0.5625rem;
+  letter-spacing: var(--tracking-mono);
+  text-transform: uppercase;
+  width: auto;
+  height: auto;
+  border: 0;
+  transform: none;
+  opacity: 1;
+}
