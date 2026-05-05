@@ -74,6 +74,25 @@ defmodule Manillum.Archive.Card do
       change set_attribute(:status, :filed)
     end
 
+    update :rename do
+      description """
+      Change one or more of `drawer` / `date_token` / `slug`. Validates the
+      new combination against the `:unique_call_number` identity, writes a
+      `Manillum.Archive.CallNumberRedirect` for the **old** segments
+      pointing at this card, and broadcasts `{:card_renamed, old, new}` on
+      `"user:\#{user_id}:archive"` per spec §7.3.
+
+      Acceptable on cards in any status — the rename mechanic is what
+      makes retroactive disambiguation possible (per §7.4 / spec note on
+      `JULIUS-CAESAR` flow).
+      """
+
+      accept [:drawer, :date_token, :slug]
+      require_atomic? false
+
+      change Manillum.Archive.Card.Changes.Rename
+    end
+
     action :propose_call_number, Manillum.Archive.Card.CallNumberProposal do
       description """
       Pure read action: given a user + segments + card_type, check whether
