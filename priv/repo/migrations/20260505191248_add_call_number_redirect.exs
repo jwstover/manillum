@@ -29,7 +29,8 @@ defmodule Manillum.Repo.Migrations.AddCallNumberRedirect do
             type: :uuid,
             prefix: "public",
             on_delete: :delete_all
-          ), null: false
+          ),
+          null: false
 
       add :current_card_id,
           references(:cards,
@@ -38,7 +39,8 @@ defmodule Manillum.Repo.Migrations.AddCallNumberRedirect do
             type: :uuid,
             prefix: "public",
             on_delete: :delete_all
-          ), null: false
+          ),
+          null: false
     end
 
     create unique_index(:call_number_redirects, [:user_id, :drawer, :date_token, :slug],

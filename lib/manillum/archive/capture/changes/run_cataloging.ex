@@ -154,7 +154,8 @@ defmodule Manillum.Archive.Capture.Changes.RunCataloging do
       slug: draft.slug,
       card_type: draft.card_type,
       front: draft.front,
-      back: draft.back
+      back: draft.back,
+      pending_autostubs: draft.entities || []
     }
 
     Card

@@ -18,6 +18,7 @@ defmodule Manillum.Archive do
       define :file_card, action: :file
       define :propose_call_number, action: :propose_call_number
       define :rename_card, action: :rename
+      define :autostub, action: :autostub, args: [:user_id, :entities]
     end
 
     resource Manillum.Archive.Capture do
