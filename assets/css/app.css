@@ -93,6 +93,8 @@
 @import "./components/button.css";
 @import "./components/tag.css";
 @import "./components/toast.css";
+@import "./components/conversation.css";
+@import "./components/composer.css";
 
 /* ── Body baseline — Newsreader, ink on linen */
 html, body {

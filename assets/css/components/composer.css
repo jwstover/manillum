@@ -1,0 +1,79 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   .composer — the "Ask Livy —" bottom bar. A single-line text input flanked
+   by a mono brass kicker on the left and a mono `↵ ASK` glyph on the right.
+   The input itself is unstyled (no DaisyUI input chrome) and inherits the
+   bar's background, since the bar IS the input visually.
+
+   Markup pattern:
+     <form class="composer" phx-submit="...">
+       <span class="composer__kicker">Ask Livy —</span>
+       <input class="composer__input" type="text" placeholder="..." />
+       <button class="composer__submit" type="submit">↵ ASK</button>
+     </form>
+   ───────────────────────────────────────────────────────────────────── */
+
+.composer {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  background: var(--color-paper-deep);
+  border-top: 1px solid var(--color-rule-strong);
+  padding: 0.75rem var(--margin-page-x);
+}
+
+.composer__kicker {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-xs);
+  color: var(--color-brass);
+  letter-spacing: var(--tracking-mono-wide);
+  text-transform: uppercase;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.composer__input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  font-family: var(--font-body);
+  font-size: 0.90625rem;
+  font-style: italic;
+  color: var(--color-ink);
+  padding: 0.25rem 0;
+}
+
+.composer__input::placeholder {
+  color: var(--color-ink-faint);
+  font-style: italic;
+}
+
+.composer__submit {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-xs);
+  color: var(--color-ink-faint);
+  letter-spacing: var(--tracking-mono-wide);
+  text-transform: uppercase;
+  padding: 0.25rem 0.5rem;
+  transition: color 0.12s ease, background 0.12s ease;
+}
+
+.composer__submit:hover {
+  color: var(--color-paper-light);
+  background: var(--color-oxblood);
+}
+
+.composer__submit:focus-visible {
+  outline: 2px solid var(--color-oxblood);
+  outline-offset: 2px;
+}
+
+.composer__submit:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}

@@ -1,190 +1,209 @@
 defmodule ManillumWeb.ConversationsLive do
   use Elixir.ManillumWeb, :live_view
+
+  import ManillumWeb.ManillumComponents
+
   @actor_required? true
   @chat_ui_tools AshAi.ChatUI.Tools
+
   on_mount {ManillumWeb.LiveUserAuth, :live_user_required}
 
   def render(assigns) do
     ~H"""
-    <div class="drawer md:drawer-open bg-base-200 min-h-dvh max-h-dvh">
-      <input id="ash-ai-drawer" type="checkbox" class="drawer-toggle" />
-      <div class="drawer-content flex flex-col">
+    <div class="conversation">
+      <aside class="conversation__rail">
+        <div class="conversation__rail-head">
+          <.meta_label tone={:oxblood}>Conversations</.meta_label>
+          <.btn variant={:ghost} size={:sm} href={~p"/conversations"}>
+            + new
+          </.btn>
+        </div>
+        <p :if={not @has_conversations} class="conversation__rail-empty">
+          no conversations yet
+        </p>
+        <ul class="conversation__rail-list" id="conversations-list" phx-update="stream">
+          <li
+            :for={{dom_id, conversation} <- @streams.conversations}
+            id={dom_id}
+            class={[
+              "conversation__rail-item",
+              @conversation && @conversation.id == conversation.id && "is-active"
+            ]}
+          >
+            <.link
+              navigate={~p"/conversations/#{conversation.id}"}
+              class="conversation__rail-link"
+            >
+              <span class="conversation__rail-qry">
+                {pad_qry(conversation.query_number)}
+              </span>
+              <span class="conversation__rail-title">
+                {rail_title(conversation.title)}
+              </span>
+            </.link>
+          </li>
+        </ul>
+      </aside>
+
+      <main class="conversation__main">
+        <.topbar active="conversation">
+          <:tab id="today" href={~p"/"}>Today</:tab>
+          <:tab id="conversation" href={~p"/conversations"}>Conversation</:tab>
+          <:tab id="timeline" href={~p"/conversations"}>Your timeline</:tab>
+          <:tab id="review" href={~p"/conversations"}>Review</:tab>
+        </.topbar>
+        <.era_band />
+
+        <.convo_header
+          :if={@conversation}
+          query_number={@conversation.query_number}
+          title={@conversation.title}
+          opened_at={@conversation.inserted_at}
+        />
+
         <.flash kind={:info} flash={@flash} />
         <.flash kind={:error} flash={@flash} />
-        <div
+        <.toast
           :if={Phoenix.Flash.get(@flash, :warning)}
-          class="alert alert-warning m-4 mb-0 text-sm"
-        >
-          {Phoenix.Flash.get(@flash, :warning)}
-        </div>
-        <div class="navbar bg-base-300 w-full">
-          <div class="flex-none md:hidden">
-            <label for="ash-ai-drawer" aria-label="open sidebar" class="btn btn-square btn-ghost">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-                class="inline-block h-6 w-6 stroke-current"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M4 6h16M4 12h16M4 18h16"
-                >
-                </path>
-              </svg>
-            </label>
-          </div>
-          <img
-            src="https://github.com/ash-project/ash_ai/blob/main/logos/ash_ai.png?raw=true"
-            alt="Logo"
-            class="h-12"
-            height="48"
-          />
-          <div class="mx-2 flex-1 px-2">
-            <p :if={@conversation}>{build_conversation_title_string(@conversation.title)}</p>
-            <p class="text-xs">AshAi</p>
-          </div>
-        </div>
-        <div class="flex-1 flex flex-col overflow-y-scroll bg-base-200 max-h-[calc(100dvh-8rem)]">
-          <div
-            id="message-container"
-            phx-update="stream"
-            class="flex-1 overflow-y-auto overflow-x-hidden px-4 py-2 flex flex-col-reverse"
-          >
-            <%= for {id, message} <- @streams.messages do %>
-              <div
-                id={id}
-                class={[
-                  "chat",
-                  message.role == :user && "chat-end",
-                  message.role == :assistant && "chat-start"
-                ]}
-              >
-                <div :if={message.role == :assistant} class="chat-image avatar">
-                  <div class="w-10 rounded-full bg-base-300 p-1">
-                    <img
-                      src="https://github.com/ash-project/ash_ai/blob/main/logos/ash_ai.png?raw=true"
-                      alt="Logo"
-                    />
-                  </div>
-                </div>
-                <div :if={message.role == :user} class="chat-image avatar avatar-placeholder">
-                  <div class="w-10 rounded-full bg-base-300">
-                    <.icon name="hero-user-solid" class="block" />
-                  </div>
-                </div>
-                <div
-                  :if={message.role == :assistant && tool_calls(message) != []}
-                  class="mt-2 flex w-full max-w-[36rem] min-w-0 flex-wrap gap-1 text-[11px] opacity-80"
-                >
-                  <%= for tool_call <- tool_calls(message) do %>
-                    <span class="badge badge-outline badge-info max-w-full min-w-0 justify-start overflow-hidden text-ellipsis whitespace-nowrap">
-                      tool: {tool_call.name}
-                      <span :if={tool_call.arguments != %{}}>
-                        ({tool_call.arguments_preview})
-                      </span>
-                    </span>
-                  <% end %>
-                </div>
-                <div
-                  :if={message.role == :assistant && tool_results(message) != []}
-                  class="chat-footer mt-1 flex w-full max-w-[36rem] min-w-0 flex-col gap-1"
-                >
-                  <%= for tool_result <- tool_results(message) do %>
-                    <div class={[
-                      "rounded max-w-full overflow-hidden px-2 py-1 text-xs leading-relaxed break-words",
-                      tool_result.is_error && "bg-error/20",
-                      !tool_result.is_error && "bg-base-300"
-                    ]}>
-                      <span class="font-semibold">
-                        {if tool_result.is_error, do: "tool_error", else: "tool_result"}
-                      </span>
-                      <span :if={tool_result.name}> ({tool_result.name})</span>
-                      <span class="break-all">
-                        : {tool_result.content_preview}
-                      </span>
-                    </div>
-                  <% end %>
-                </div>
-                <div :if={String.trim(message.content || "") != ""} class="chat-bubble">
-                  {to_markdown(message.content || "")}
-                </div>
-              </div>
-            <% end %>
-          </div>
-        </div>
-        <div :if={@agent_responding} class="px-4 py-2 text-xs opacity-80 flex items-center gap-2">
-          <span class="loading loading-dots loading-sm" />
-          <span>AshAi is responding...</span>
-        </div>
-        <div class="p-4 border-t">
-          <.form
-            :let={form}
-            for={@message_form}
-            phx-change="validate_message"
-            phx-debounce="blur"
-            phx-submit="send_message"
-            class="flex items-center gap-4"
-          >
-            <div class="flex-1">
-              <input
-                name={form[:content].name}
-                value={form[:content].value}
-                type="text"
-                phx-mounted={JS.focus()}
-                placeholder="Type your message..."
-                class="input input-primary w-full mb-0"
-                autocomplete="off"
-              />
-            </div>
-            <button type="submit" class="btn btn-primary rounded-full">
-              <.icon name="hero-paper-airplane" /> Send
-            </button>
-          </.form>
-        </div>
-      </div>
+          kind={:warn}
+          title={Phoenix.Flash.get(@flash, :warning)}
+        />
 
-      <div class="drawer-side border-r bg-base-300 min-w-72">
-        <div class="py-4 px-6">
-          <div class="text-lg mb-4">
-            Conversations
-          </div>
-          <div class="mb-4">
-            <.link navigate={~p"/conversations"} class="btn btn-primary btn-lg mb-2">
-              <div class="rounded-full bg-primary-content text-primary w-6 h-6 flex items-center justify-center">
-                <.icon name="hero-plus" />
+        <div
+          id="message-container"
+          phx-update="stream"
+          phx-hook=".ConversationScroll"
+          class="conversation__thread"
+        >
+          <script :type={Phoenix.LiveView.ColocatedHook} name=".ConversationScroll">
+            // Toggle `is-scrolled` on the outer `.conversation` element
+            // when the thread has been scrolled away from its resting
+            // position (newest message at the bottom edge). Used by
+            // `assets/css/components/conversation.css` to compact the era
+            // band and convo header while the user reads older messages.
+            //
+            // The thread is `flex-direction: column-reverse`, so the
+            // resting position reports `scrollTop ≈ 0` in Chrome/Safari
+            // and the scrollTop becomes negative (or positive on Firefox)
+            // as the user moves away from it. `Math.abs(scrollTop)` is
+            // the browser-agnostic "distance from resting" probe.
+            //
+            // Two guardrails keep the toggle stable while the chrome's
+            // CSS transition reflows the thread:
+            //
+            // 1. Hysteresis with absorption-aware entry threshold. When
+            //    `is-scrolled` is added the convo header collapses,
+            //    `.conversation__main`'s flex children reflow, the
+            //    thread (flex: 1, column-reverse) grows by the convo
+            //    header's full height (~84px), and scrollTop swings
+            //    sharply toward 0. A single threshold drops back below
+            //    the boundary mid-transition and the chrome flickers
+            //    open/closed for a few cycles before damping out. The
+            //    fix is a hysteresis dead-zone the absorption can't
+            //    cross: pick `ENTER_THRESHOLD` > collapsed-element-
+            //    height + `EXIT_THRESHOLD` so the post-absorption
+            //    scrollTop always lands in the "stay compact" zone.
+            //    For an ~84px convo header, ENTER 120 / EXIT 24 means
+            //    a 120px scroll absorbs to ~-36, well outside the 24px
+            //    exit boundary. Smaller scrolls don't trigger compact
+            //    at all.
+            //
+            // 2. Toggle lock + post-lock recheck. After any class flip
+            //    we ignore scroll events for the duration of the CSS
+            //    transition (~260ms) so layout churn during the
+            //    transition can't fire another flip. After the lock
+            //    lifts we re-evaluate once — if no scroll events have
+            //    fired since (scrollTop landed at rest mid-lock), this
+            //    catches it; otherwise normal scroll handling resumes.
+            const ENTER_THRESHOLD = 120;
+            const EXIT_THRESHOLD = 24;
+            const TOGGLE_LOCK_MS = 260;
+
+            export default {
+              mounted() {
+                this.root = this.el.closest(".conversation");
+                this.lockedUntil = 0;
+                this.recheckTimer = null;
+                this.onScroll = () => {
+                  if (!this.root) return;
+                  if (performance.now() < this.lockedUntil) return;
+                  const distance = Math.abs(this.el.scrollTop);
+                  const isScrolled = this.root.classList.contains("is-scrolled");
+                  const next = isScrolled
+                    ? distance > EXIT_THRESHOLD
+                    : distance > ENTER_THRESHOLD;
+                  if (next !== isScrolled) {
+                    this.root.classList.toggle("is-scrolled", next);
+                    this.lockedUntil = performance.now() + TOGGLE_LOCK_MS;
+                    // After the lock lifts, re-evaluate once. If the
+                    // transition's layout shift left scrollTop in a
+                    // position that should trigger another toggle (e.g.
+                    // the user briefly scrolled into the entry zone but
+                    // settled back at rest), this catches it. Without
+                    // the recheck, no further scroll events fire to wake
+                    // the listener and the chrome can stay in the wrong
+                    // state at the final scroll position.
+                    clearTimeout(this.recheckTimer);
+                    this.recheckTimer = setTimeout(this.onScroll, TOGGLE_LOCK_MS + 16);
+                  }
+                };
+                this.el.addEventListener("scroll", this.onScroll, { passive: true });
+                // Re-evaluate on mount: a navigation between conversations
+                // can land the thread at a non-zero scroll position before
+                // any user input fires the listener.
+                this.onScroll();
+              },
+              destroyed() {
+                this.el.removeEventListener("scroll", this.onScroll);
+                clearTimeout(this.recheckTimer);
+                if (this.root) this.root.classList.remove("is-scrolled");
+              },
+            };
+          </script>
+          <%= for {dom_id, message} <- @streams.messages do %>
+            <.message
+              id={dom_id}
+              role={message_role_atom(message)}
+              timestamp={format_msg_clock(message)}
+            >
+              {to_markdown(message.content || "")}
+
+              <div :if={tool_calls(message) != []} class="message__tool_calls">
+                <span :for={tool_call <- tool_calls(message)} class="message__tool_call">
+                  tool: {tool_call.name}<span :if={tool_call.arguments != %{}}>
+                    ({tool_call.arguments_preview})</span>
+                </span>
               </div>
-              <span>New Chat</span>
-            </.link>
-          </div>
-          <ul class="flex flex-col-reverse" phx-update="stream" id="conversations-list">
-            <%= for {id, conversation} <- @streams.conversations do %>
-              <li id={id}>
-                <.link
-                  navigate={~p"/conversations/#{conversation.id}"}
-                  phx-click="select_conversation"
-                  phx-value-id={conversation.id}
-                  class={"block py-2 px-3 transition border-l-4 pl-2 mb-2 #{if @conversation && @conversation.id == conversation.id, do: "border-primary font-medium", else: "border-transparent"}"}
+
+              <div :if={tool_results(message) != []} class="message__tool_results">
+                <div
+                  :for={tool_result <- tool_results(message)}
+                  class={[
+                    "message__tool_result",
+                    tool_result.is_error && "message__tool_result--error"
+                  ]}
                 >
-                  {build_conversation_title_string(conversation.title)}
-                </.link>
-              </li>
-            <% end %>
-          </ul>
+                  <strong>
+                    {if tool_result.is_error, do: "tool_error", else: "tool_result"}
+                  </strong>
+                  <span :if={tool_result.name}> ({tool_result.name})</span>: {tool_result.content_preview}
+                </div>
+              </div>
+            </.message>
+          <% end %>
         </div>
-      </div>
+
+        <.composing_indicator :if={@agent_responding} />
+
+        <.composer
+          :if={@message_form}
+          form={@message_form}
+          phx_change="validate_message"
+          phx_submit="send_message"
+        />
+      </main>
     </div>
     """
-  end
-
-  def build_conversation_title_string(title) do
-    cond do
-      title == nil -> "Untitled conversation"
-      is_binary(title) && String.length(title) > 25 -> String.slice(title, 0, 25) <> "..."
-      is_binary(title) && String.length(title) <= 25 -> title
-    end
   end
 
   def mount(_params, _session, socket) do
@@ -205,9 +224,12 @@ defmodule ManillumWeb.ConversationsLive do
       socket
       |> assign(:page_title, "Chat")
       |> stream(:conversations, conversations)
+      |> assign(:has_conversations, conversations != [])
       |> assign(:agent_responding, false)
       |> assign(:tool_data_warning_shown?, false)
-      |> assign(:messages, [])
+      |> assign(:conversation, nil)
+      |> assign(:message_form, nil)
+      |> stream_configure(:messages, dom_id: &"message-#{&1.id}")
 
     {:ok, socket}
   end
@@ -242,7 +264,7 @@ defmodule ManillumWeb.ConversationsLive do
       |> maybe_warn_tool_data(messages)
       |> assign(:conversation, conversation)
       |> assign(:agent_responding, agent_response_pending?(messages))
-      |> stream(:messages, messages)
+      |> stream(:messages, messages, reset: true)
       |> assign_message_form()
       |> then(&{:noreply, &1})
     end
@@ -256,7 +278,7 @@ defmodule ManillumWeb.ConversationsLive do
     socket
     |> assign(:conversation, nil)
     |> assign(:agent_responding, false)
-    |> stream(:messages, [])
+    |> stream(:messages, [], reset: true)
     |> assign_message_form()
     |> then(&{:noreply, &1})
   end
@@ -324,7 +346,10 @@ defmodule ManillumWeb.ConversationsLive do
         socket
       end
 
-    {:noreply, stream_insert(socket, :conversations, conversation)}
+    {:noreply,
+     socket
+     |> assign(:has_conversations, true)
+     |> stream_insert(:conversations, conversation)}
   end
 
   defp assign_message_form(socket) do
@@ -340,11 +365,7 @@ defmodule ManillumWeb.ConversationsLive do
         |> to_form()
       end
 
-    assign(
-      socket,
-      :message_form,
-      form
-    )
+    assign(socket, :message_form, form)
   end
 
   defp tool_calls(message), do: safe_extract(message).tool_calls
@@ -402,6 +423,14 @@ defmodule ManillumWeb.ConversationsLive do
   defp user_message?(message), do: message_role(message) in [:user, "user"]
   defp assistant_message?(message), do: message_role(message) in [:assistant, "assistant"]
 
+  defp message_role_atom(message) do
+    case message_role(message) do
+      :assistant -> :assistant
+      "assistant" -> :assistant
+      _ -> :user
+    end
+  end
+
   defp update_agent_responding(socket, message) do
     cond do
       user_message?(message) ->
@@ -424,9 +453,33 @@ defmodule ManillumWeb.ConversationsLive do
     end
   end
 
+  defp pad_qry(n) when is_integer(n) and n >= 0 do
+    n |> Integer.to_string() |> String.pad_leading(4, "0")
+  end
+
+  defp pad_qry(_), do: "----"
+
+  defp rail_title(nil), do: "Untitled conversation"
+  defp rail_title(""), do: "Untitled conversation"
+  defp rail_title(title) when is_binary(title), do: title
+
+  # The PubSub broadcast for messages publishes a plain map (no
+  # inserted_at field) — return nil there so the speaker label stays
+  # stable until the full record is fetched.
+  defp format_msg_clock(%{inserted_at: %DateTime{} = dt}) do
+    "#{pad2(dt.hour)}:#{pad2(dt.minute)}"
+  end
+
+  defp format_msg_clock(%{inserted_at: %NaiveDateTime{} = dt}) do
+    "#{pad2(dt.hour)}:#{pad2(dt.minute)}"
+  end
+
+  defp format_msg_clock(_), do: nil
+
+  defp pad2(n) when n < 10, do: "0#{n}"
+  defp pad2(n), do: "#{n}"
+
   defp to_markdown(text) do
-    # Note that you must pass the "unsafe: true" option to first generate the raw HTML
-    # in order to sanitize it. https://hexdocs.pm/mdex/MDEx.html#module-sanitize
     MDEx.to_html(text,
       extension: [
         strikethrough: true,
@@ -450,8 +503,7 @@ defmodule ManillumWeb.ConversationsLive do
     )
     |> case do
       {:ok, html} ->
-        html
-        |> Phoenix.HTML.raw()
+        Phoenix.HTML.raw(html)
 
       {:error, _} ->
         text

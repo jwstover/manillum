@@ -26,6 +26,10 @@ defmodule ManillumWeb.ManillumComponents do
     * `action_pill/1` — tiny inline action
     * `toast/1` — flash / notification (NOT DaisyUI's toast)
     * `filing_tray/1` — right-side drawer
+    * `convo_header/1` — kicker + display title + opened stamp
+    * `message/1` — speaker gutter + body for a chat turn
+    * `composing_indicator/1` — three-dot streaming pulse
+    * `composer/1` — "Ask Livy —" bottom input bar
 
   Components in this module deliberately don't rely on DaisyUI classes —
   they're the visual signature of the app. DaisyUI lives in
@@ -578,4 +582,138 @@ defmodule ManillumWeb.ManillumComponents do
     </div>
     """
   end
+
+  # ────────────────────────────────────────────────────────────────────
+  # convo_header — left: ● QRY № 0089 · N exchanges + display title;
+  # right: opened-at stamp. Sits below the era band, above the thread.
+  # ────────────────────────────────────────────────────────────────────
+  attr :query_number, :integer, required: true
+  attr :title, :string, default: nil, doc: "conversation title or nil for untitled"
+  attr :exchanges, :integer, default: nil
+  attr :opened_at, :any, default: nil, doc: "DateTime / NaiveDateTime / time string"
+
+  def convo_header(assigns) do
+    ~H"""
+    <header class="convo_header">
+      <div>
+        <span class="qry_stamp">
+          QRY {format_qry(@query_number)}<span :if={@exchanges}>
+            · {@exchanges} exchanges</span>
+        </span>
+        <h1 class="convo_header__title">
+          {@title || "Untitled conversation"}
+        </h1>
+      </div>
+      <div :if={@opened_at} class="convo_header__opened">
+        Opened {format_clock(@opened_at)}
+      </div>
+    </header>
+    """
+  end
+
+  # ────────────────────────────────────────────────────────────────────
+  # message — single chat turn. Speaker label on the left, body on the
+  # right. Body styling diverges by role (user italic on brass rule;
+  # assistant ink on rule). Inner block is the rendered content.
+  # ────────────────────────────────────────────────────────────────────
+  attr :id, :string, default: nil
+  attr :role, :atom, values: [:user, :assistant], required: true
+  attr :timestamp, :string, default: nil
+  attr :class, :string, default: nil
+  attr :rest, :global
+  slot :inner_block, required: true
+
+  def message(assigns) do
+    ~H"""
+    <article id={@id} class={["message", "message--#{@role}", @class]} {@rest}>
+      <div class="message__speaker">
+        {speaker_for(@role)}<br :if={@timestamp} />{@timestamp}
+      </div>
+      <div class="message__body">
+        {render_slot(@inner_block)}
+      </div>
+    </article>
+    """
+  end
+
+  defp speaker_for(:user), do: "You"
+  defp speaker_for(:assistant), do: "Livy"
+
+  # ────────────────────────────────────────────────────────────────────
+  # composing_indicator — three pulsing oxblood dots + italic caption.
+  # Shown while the assistant is streaming a response.
+  # ────────────────────────────────────────────────────────────────────
+  attr :label, :string, default: "Livy is composing…"
+
+  def composing_indicator(assigns) do
+    ~H"""
+    <div class="composing" aria-live="polite">
+      <span class="composing__dots" aria-hidden="true">
+        <i></i><i></i><i></i>
+      </span>
+      <span>{@label}</span>
+    </div>
+    """
+  end
+
+  # ────────────────────────────────────────────────────────────────────
+  # composer — "Ask Livy —" bottom input bar. Wraps a Phoenix form with a
+  # mono brass kicker on the left and a `↵ ASK` submit on the right.
+  # ────────────────────────────────────────────────────────────────────
+  attr :form, :any, required: true, doc: "Phoenix.HTML.Form built via AshPhoenix.Form"
+  attr :field, :atom, default: :content, doc: "form field for the message body"
+  attr :placeholder, :string, default: "Ask Livy anything about history…"
+  attr :phx_change, :string, default: nil
+  attr :phx_submit, :string, default: "send_message"
+  attr :disabled, :boolean, default: false
+
+  def composer(assigns) do
+    ~H"""
+    <.form
+      :let={f}
+      for={@form}
+      phx-change={@phx_change}
+      phx-submit={@phx_submit}
+      class="composer"
+    >
+      <span class="composer__kicker">Ask Livy —</span>
+      <input
+        type="text"
+        name={f[@field].name}
+        value={f[@field].value}
+        placeholder={@placeholder}
+        autocomplete="off"
+        phx-mounted={Phoenix.LiveView.JS.focus()}
+        class="composer__input"
+      />
+      <button type="submit" class="composer__submit" disabled={@disabled}>
+        ↵ Ask
+      </button>
+    </.form>
+    """
+  end
+
+  # Format a query_number as QRY № 0089 — zero-padded to 4 digits to match
+  # the design's masthead style, with graceful fallback if it's larger.
+  defp format_qry(n) when is_integer(n) and n >= 0 do
+    n |> Integer.to_string() |> String.pad_leading(4, "0")
+  end
+
+  defp format_qry(_), do: "----"
+
+  # Format a datetime as 24h HH:MM in UTC. Conversation timestamps are
+  # naive UTC; rendering them in the user's local zone is a follow-up.
+  defp format_clock(%DateTime{} = dt) do
+    "#{pad2(dt.hour)}:#{pad2(dt.minute)}"
+  end
+
+  defp format_clock(%NaiveDateTime{} = dt) do
+    "#{pad2(dt.hour)}:#{pad2(dt.minute)}"
+  end
+
+  defp format_clock(s) when is_binary(s), do: s
+  defp format_clock(_), do: ""
+
+  defp pad2(n) when is_integer(n) and n < 10, do: "0#{n}"
+  defp pad2(n) when is_integer(n), do: "#{n}"
 end
