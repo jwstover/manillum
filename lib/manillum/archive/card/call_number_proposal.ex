@@ -5,17 +5,19 @@ defmodule Manillum.Archive.Card.CallNumberProposal do
   Two shapes, discriminated by `:status`:
 
     * `:resolved` — `drawer`, `date_token`, `slug`, and `call_number` are
-      populated; `suggestions` is `[]`. The proposed segments are unique
-      for the user and can be used to draft a card.
+      populated; `existing_card_id` is nil. The proposed segments are
+      unique for the user and can be used to draft a card.
 
     * `:collision` — the requested segments collide with an existing card
-      for the user. `suggestions` is a non-empty list of
-      `{slug, reason}` tuples. The discriminator picks alternatives based
-      on `card_type` per spec §7.4 (letter suffix for people, year
-      disambiguator for events, qualifier for places, numeric otherwise).
+      for the user. `existing_card_id` is the colliding card's UUID; the
+      caller decides what to do (edit the slug, discard the draft, surface
+      the existing card to the user).
 
-  The format string in `:call_number` always matches §7.4 byte-for-byte —
-  see `Manillum.Archive.Card.format_call_number/3`.
+  This action is **detection-only**. It does not generate alternative
+  slugs — picking a meaningful disambiguator requires content context
+  (the card's `front` / `back` / entities) that lives at the cataloging
+  pipeline or the filing tray, not here. See spec §7.4 for the
+  disambiguation style guide.
   """
 
   use Ash.TypedStruct
@@ -26,6 +28,6 @@ defmodule Manillum.Archive.Card.CallNumberProposal do
     field :date_token, :string
     field :slug, :string
     field :call_number, :string
-    field :suggestions, {:array, :map}, default: []
+    field :existing_card_id, :uuid
   end
 end

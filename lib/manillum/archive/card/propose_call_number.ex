@@ -1,8 +1,15 @@
 defmodule Manillum.Archive.Card.ProposeCallNumber do
   @moduledoc """
-  Implementation of `Card.propose_call_number`. Pure read operation: queries
-  for an existing card with the same segments and either resolves to a
-  formatted call_number or returns disambiguation suggestions per §7.4.
+  Implementation of `Card.propose_call_number`. Pure read action: queries
+  for an existing card with the same segments and returns either a
+  resolved proposal with the formatted call_number, or a collision flag
+  with the existing card's id.
+
+  This action does not invent alternative slugs. Generating a meaningful
+  disambiguator requires content context (the card's `front` / `back` /
+  entities, plus the colliding card's content) which lives at the
+  cataloging pipeline (Slice 4) or in the filing tray (Stream E). See
+  spec §7.4 for the disambiguation style guide.
   """
 
   use Ash.Resource.Actions.Implementation
@@ -14,83 +21,30 @@ defmodule Manillum.Archive.Card.ProposeCallNumber do
 
   @impl true
   def run(input, _opts, _context) do
-    %{drawer: drawer, date_token: date_token, slug: slug, card_type: card_type, user_id: user_id} =
-      input.arguments
+    %{drawer: drawer, date_token: date_token, slug: slug, user_id: user_id} = input.arguments
 
-    if collision?(user_id, drawer, date_token, slug) do
-      {:ok,
-       %CallNumberProposal{
-         status: :collision,
-         suggestions: suggest(slug, card_type, date_token)
-       }}
-    else
-      {:ok,
-       %CallNumberProposal{
-         status: :resolved,
-         drawer: drawer,
-         date_token: date_token,
-         slug: slug,
-         call_number: Card.format_call_number(drawer, date_token, slug)
-       }}
+    case existing_card(user_id, drawer, date_token, slug) do
+      nil ->
+        {:ok,
+         %CallNumberProposal{
+           status: :resolved,
+           drawer: drawer,
+           date_token: date_token,
+           slug: slug,
+           call_number: Card.format_call_number(drawer, date_token, slug)
+         }}
+
+      %Card{id: id} ->
+        {:ok, %CallNumberProposal{status: :collision, existing_card_id: id}}
     end
   end
 
-  defp collision?(user_id, drawer, date_token, slug) do
-    # Per §7.4 (clarified): the unique key is the full call_number —
-    # (user_id, drawer, date_token, slug). Same slug + drawer with a
-    # different date_token does not collide.
+  defp existing_card(user_id, drawer, date_token, slug) do
     Card
     |> Ash.Query.filter(
       user_id == ^user_id and drawer == ^drawer and date_token == ^date_token and slug == ^slug
     )
-    |> Ash.exists?(authorize?: false)
-  end
-
-  # §7.4 disambiguation strategy, by card_type. The specific values are
-  # starting points — a UI / future iteration can offer richer choices
-  # (e.g., real letters for actual person names, real qualifiers for
-  # places). For MVP we provide the right *shape* of suggestion.
-
-  defp suggest(slug, :person, _date_token) do
-    # Letter suffix — A through C as starter alternatives.
-    for <<letter <- "ABC">> do
-      %{
-        slug: slug <> "-" <> <<letter>>,
-        reason: "Letter-suffix disambiguator (person card type, §7.4)."
-      }
-    end
-  end
-
-  defp suggest(slug, :event, _date_token) do
-    # Under the (drawer, date_token, slug) identity, an event collision means
-    # both cards already share a date_token — so a "year disambiguator" would
-    # be redundant. Fall back to numeric / descriptive suffixes; the user can
-    # rename to something more meaningful (e.g. "-NAVAL", "-LAND") via the
-    # filing-tray edit affordance.
-    for n <- 2..4 do
-      %{
-        slug: slug <> "-" <> Integer.to_string(n),
-        reason: "Numeric disambiguator (event card type, dates already match per §7.4)."
-      }
-    end
-  end
-
-  defp suggest(slug, :place, _date_token) do
-    # Qualifier suffix — placeholder; the user typically replaces ALT with
-    # a region or era qualifier (e.g., ALEXANDRIA-EGY, ALEXANDRIA-TROAS).
-    [
-      %{
-        slug: slug <> "-ALT",
-        reason:
-          "Qualifier disambiguator for place card type (§7.4) — replace ALT with a region or era."
-      }
-    ]
-  end
-
-  defp suggest(slug, _other_card_type, _date_token) do
-    # Numeric fallback for concept / source / date / artifact / event-without-date.
-    for n <- 2..4 do
-      %{slug: slug <> "-" <> Integer.to_string(n), reason: "Numeric disambiguator."}
-    end
+    |> Ash.Query.select([:id])
+    |> Ash.read_one!(authorize?: false)
   end
 end

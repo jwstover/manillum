@@ -164,7 +164,7 @@ defmodule Manillum.Archive.CardTest do
                 date_token: "1177BC",
                 slug: "COLLAPSE",
                 call_number: call_number,
-                suggestions: []
+                existing_card_id: nil
               }} =
                Manillum.Archive.Card
                |> Ash.ActionInput.for_action(:propose_call_number, %{
@@ -181,10 +181,19 @@ defmodule Manillum.Archive.CardTest do
                call_number
     end
 
-    test "person collision suggests letter-suffix slugs", %{user: user, seed_card: seed_card} do
-      _existing = seed_card.("CAESAR", :person)
+    test "collision returns the existing card's id", %{user: user, seed_card: seed_card} do
+      existing = seed_card.("CAESAR", :person)
 
-      assert {:ok, %{status: :collision, suggestions: suggestions}} =
+      assert {:ok,
+              %Manillum.Archive.Card.CallNumberProposal{
+                status: :collision,
+                existing_card_id: existing_id,
+                # All resolved-only fields are nil on a collision
+                drawer: nil,
+                date_token: nil,
+                slug: nil,
+                call_number: nil
+              }} =
                Manillum.Archive.Card
                |> Ash.ActionInput.for_action(:propose_call_number, %{
                  user_id: user.id,
@@ -195,43 +204,14 @@ defmodule Manillum.Archive.CardTest do
                })
                |> Ash.run_action()
 
-      assert length(suggestions) > 0
-
-      for %{slug: slug, reason: reason} <- suggestions do
-        assert String.starts_with?(slug, "CAESAR-"), "expected letter-suffix slug, got #{slug}"
-        # Letter suffixes are a single uppercase A–Z.
-        assert Regex.match?(~r/^CAESAR-[A-Z]$/, slug)
-        assert reason =~ "person"
-      end
-    end
-
-    test "event collision (same date_token) suggests numeric fallbacks",
-         %{user: user, seed_card: seed_card} do
-      # seed_card defaults to date_token "1177BC". A collision now requires
-      # all three segments (drawer, date_token, slug) to match.
-      _existing = seed_card.("THERMOPYLAE", :event)
-
-      assert {:ok, %{status: :collision, suggestions: suggestions}} =
-               Manillum.Archive.Card
-               |> Ash.ActionInput.for_action(:propose_call_number, %{
-                 user_id: user.id,
-                 drawer: :ANT,
-                 date_token: "1177BC",
-                 slug: "THERMOPYLAE",
-                 card_type: :event
-               })
-               |> Ash.run_action()
-
-      assert Enum.any?(suggestions, fn %{slug: slug, reason: reason} ->
-               slug == "THERMOPYLAE-2" and reason =~ "Numeric"
-             end)
+      assert existing_id == existing.id
     end
 
     test "different date_tokens with the same slug + drawer do NOT collide",
          %{user: user, seed_card: seed_card} do
       _existing = seed_card.("THERMOPYLAE", :event)
 
-      assert {:ok, %{status: :resolved, call_number: cn}} =
+      assert {:ok, %{status: :resolved, call_number: cn, existing_card_id: nil}} =
                Manillum.Archive.Card
                |> Ash.ActionInput.for_action(:propose_call_number, %{
                  user_id: user.id,
@@ -244,26 +224,6 @@ defmodule Manillum.Archive.CardTest do
                |> Ash.run_action()
 
       assert cn == "ANT · 480BC · THERMOPYLAE"
-    end
-
-    test "place collision suggests a qualifier-style slug",
-         %{user: user, seed_card: seed_card} do
-      _existing = seed_card.("ALEXANDRIA", :place)
-
-      assert {:ok, %{status: :collision, suggestions: suggestions}} =
-               Manillum.Archive.Card
-               |> Ash.ActionInput.for_action(:propose_call_number, %{
-                 user_id: user.id,
-                 drawer: :ANT,
-                 date_token: "1177BC",
-                 slug: "ALEXANDRIA",
-                 card_type: :place
-               })
-               |> Ash.run_action()
-
-      assert Enum.any?(suggestions, fn %{slug: slug, reason: reason} ->
-               String.starts_with?(slug, "ALEXANDRIA-") and reason =~ "place"
-             end)
     end
   end
 
