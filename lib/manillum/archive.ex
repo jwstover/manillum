@@ -113,6 +113,93 @@ defmodule Manillum.Archive do
   end
 
   @doc """
+  Cosine-similarity search over a user's existing cards. Returns the
+  ids of filed cards whose `embedding` is within `threshold` cosine
+  distance of `query_embedding`, sorted nearest first.
+
+  ## Parameters
+
+  - `user_id` — scope the search to this user's archive.
+  - `query_embedding` — a 1536-dim vector (list of floats or
+    `Ash.Vector`) produced by `Manillum.AI.Embedding.OpenAI.generate/2`.
+
+  ## Options
+
+  - `:threshold` (default `0.25`) — pgvector cosine distance cutoff.
+    `<=>` produces 0 (identical direction) to 2 (opposite). 0.25
+    corresponds to ~87% cosine similarity; tighten for more precision,
+    loosen for more recall. Tuned during Gate B.3.
+  - `:limit` (default `5`) — maximum number of candidates to return.
+  - `:exclude_ids` (default `[]`) — card ids to omit (e.g. the draft
+    being checked, or candidates the user has already dismissed).
+  - `:status` (default `[:filed]`) — which card statuses are eligible
+    targets. Cataloging compares against filed cards; reactive linking
+    (M-34) will use the same default.
+
+  ## Returns
+
+  A list of `Ash.UUID.t()` ordered by cosine distance ascending
+  (nearest first). Cards without an embedding are excluded
+  automatically (the embedding job runs async via the
+  `:ash_ai_update_embeddings` AshOban trigger; recently-filed cards
+  may not yet have one). Empty list when no candidates clear the
+  threshold or when `query_embedding` is `nil`.
+  """
+  @type embedding :: [float()] | Ash.Vector.t()
+  @spec find_duplicates(Ash.UUID.t(), embedding() | nil, keyword()) :: [Ash.UUID.t()]
+  def find_duplicates(user_id, query_embedding, opts \\ [])
+
+  def find_duplicates(_user_id, nil, _opts), do: []
+
+  def find_duplicates(user_id, query_embedding, opts) when is_binary(user_id) do
+    require Ash.Expr
+    require Ash.Query
+    require Ash.Sort
+
+    threshold = Keyword.get(opts, :threshold, 0.25)
+    limit = Keyword.get(opts, :limit, 5)
+    exclude_ids = Keyword.get(opts, :exclude_ids, [])
+    statuses = Keyword.get(opts, :status, [:filed])
+
+    case to_vector(query_embedding) do
+      {:ok, vector} ->
+        sort_expr = Ash.Sort.expr_sort(vector_cosine_distance(embedding, ^vector), :float)
+
+        Manillum.Archive.Card
+        |> Ash.Query.select([:id])
+        |> Ash.Query.filter(user_id == ^user_id and status in ^statuses)
+        |> Ash.Query.filter(not is_nil(embedding))
+        |> exclude_ids(exclude_ids)
+        |> Ash.Query.filter(vector_cosine_distance(embedding, ^vector) <= ^threshold)
+        |> Ash.Query.sort([{sort_expr, :asc}])
+        |> Ash.Query.limit(limit)
+        |> Ash.read!(authorize?: false)
+        |> Enum.map(& &1.id)
+
+      :error ->
+        []
+    end
+  end
+
+  defp exclude_ids(query, []), do: query
+
+  defp exclude_ids(query, ids) when is_list(ids) do
+    require Ash.Query
+    Ash.Query.filter(query, id not in ^ids)
+  end
+
+  defp to_vector(%Ash.Vector{} = vector), do: {:ok, vector}
+
+  defp to_vector(list) when is_list(list) do
+    case Ash.Vector.new(list) do
+      {:ok, vector} -> {:ok, vector}
+      {:error, _} -> :error
+    end
+  end
+
+  defp to_vector(_), do: :error
+
+  @doc """
   Returns the partner card ids for every `:see_also` link touching
   `card_id`. Hides the canonical-ordering detail used by storage —
   callers see a symmetric view regardless of which side of the pair
