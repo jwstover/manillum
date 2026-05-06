@@ -11,7 +11,7 @@ defmodule ManillumWeb.ConversationsLive do
   def render(assigns) do
     ~H"""
     <div class="conversation">
-      <.topbar active="conversations" meta={@topbar_meta}>
+      <.topbar active="conversations">
         <:tab id="today" href={~p"/"}>Today</:tab>
         <:tab id="conversations" href={~p"/conversations"}>Conversations</:tab>
         <:tab id="catalog" href={~p"/catalog"}>Catalog</:tab>
@@ -243,7 +243,6 @@ defmodule ManillumWeb.ConversationsLive do
       |> assign(:tool_data_warning_shown?, false)
       |> assign(:conversation, nil)
       |> assign(:exchange_count, 0)
-      |> assign(:topbar_meta, topbar_meta(conversations))
       |> assign(:message_form, nil)
       |> assign(:mentions, [])
       |> stream_configure(:messages, dom_id: &"message-#{&1.id}")
@@ -556,12 +555,6 @@ defmodule ManillumWeb.ConversationsLive do
     else
       socket
     end
-  end
-
-  defp topbar_meta([]), do: nil
-
-  defp topbar_meta(conversations) do
-    "#{length(conversations)} conversations"
   end
 
   # The PubSub broadcast for messages publishes a plain map (no
