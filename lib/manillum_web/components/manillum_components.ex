@@ -716,7 +716,7 @@ defmodule ManillumWeb.ManillumComponents do
   end
 
   # ────────────────────────────────────────────────────────────────────
-  # convo_header — left: ● QRY № 0089 · N exchanges + display title;
+  # convo_header — left: ● Conversation № 89 · N exchanges + display title;
   # right: opened-at stamp. Sits below the era band, above the thread.
   # ────────────────────────────────────────────────────────────────────
   attr :query_number, :integer, required: true
@@ -729,8 +729,8 @@ defmodule ManillumWeb.ManillumComponents do
     <header class="convo_header">
       <div>
         <span class="qry_stamp">
-          QRY {format_qry(@query_number)}<span :if={@exchanges}>
-            · {@exchanges} exchanges</span>
+          Conversation № {@query_number}<span :if={@exchanges && @exchanges > 0}>
+            · {@exchanges} {pluralize(@exchanges, "exchange", "exchanges")}</span>
         </span>
         <h1 class="convo_header__title">
           {@title || "Untitled conversation"}
@@ -742,6 +742,9 @@ defmodule ManillumWeb.ManillumComponents do
     </header>
     """
   end
+
+  defp pluralize(1, singular, _plural), do: singular
+  defp pluralize(_, _singular, plural), do: plural
 
   # ────────────────────────────────────────────────────────────────────
   # message — single chat turn. Speaker label on the left, body on the
@@ -824,14 +827,6 @@ defmodule ManillumWeb.ManillumComponents do
     </.form>
     """
   end
-
-  # Format a query_number as QRY № 0089 — zero-padded to 4 digits to match
-  # the design's masthead style, with graceful fallback if it's larger.
-  defp format_qry(n) when is_integer(n) and n >= 0 do
-    n |> Integer.to_string() |> String.pad_leading(4, "0")
-  end
-
-  defp format_qry(_), do: "----"
 
   # Format a datetime as 24h HH:MM in UTC. Conversation timestamps are
   # naive UTC; rendering them in the user's local zone is a follow-up.
