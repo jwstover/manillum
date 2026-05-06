@@ -72,8 +72,11 @@ defmodule Manillum.Archive.RenameTest do
     end
 
     test "rejects renaming onto an existing identity", %{user: user} do
-      _existing = seed_card(user, slug: "OCTAVIAN")
-      caesar = seed_card(user, [])
+      # The `:unique_call_number` identity is partial (`status != :draft`),
+      # so the collision is enforced between filed cards. Use :filed so
+      # the constraint actually fires.
+      _existing = seed_card(user, slug: "OCTAVIAN", status: :filed)
+      caesar = seed_card(user, status: :filed)
 
       assert {:error, _} = Archive.rename_card(caesar, %{slug: "OCTAVIAN"})
     end

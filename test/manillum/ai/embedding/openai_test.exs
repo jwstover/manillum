@@ -21,7 +21,10 @@ defmodule Manillum.AI.Embedding.OpenAITest do
 
   describe "generate/2" do
     setup do
-      on_exit(&ReqLLMStub.reset/0)
+      # Reset before each test rather than on_exit — `ReqLLMStub` is an
+      # Agent linked to the calling test process and dies with it, so
+      # on_exit handlers can race against name unregistration.
+      ReqLLMStub.reset()
       :ok
     end
 
