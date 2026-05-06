@@ -177,6 +177,8 @@ Jake runs several Phoenix/Postgres projects on the same machine, so this project
 | Phoenix endpoint (dev) | **4040** | `ManillumWeb.Endpoint` in `config/dev.exs`. `config/runtime.exs` also defaults `PORT` to 4040 for releases run locally. |
 | Phoenix endpoint (test) | **4042** | `config/test.exs`. The test endpoint runs with `server: false`, but the port is set for URL generation and to keep collisions impossible if a test ever boots the server. |
 
+**Jake runs the dev server.** Do not start `mix phx.server` (or `iex -S mix phx.server`) yourself. Jake keeps an interactive session running with code-reload so he can see compile errors and watch logs as you work. If port 4040 is unreachable, ask Jake to start the server — do not boot a parallel instance, and do not assume a different port is the running one.
+
 Start the database with `docker compose up -d postgres`. The container is named `manillum-postgres` so it's identifiable in `docker ps` alongside other projects' containers. Data is persisted in the `manillum_postgres_data` named volume.
 
 If you need another port (e.g., for LiveDashboard, a worker process, additional services), pick something in the 4040–4049 / 5440–5449 range to keep this project's footprint contiguous.
