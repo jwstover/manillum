@@ -71,3 +71,38 @@
   letter-spacing: var(--tracking-mono-wide);
   text-transform: uppercase;
 }
+
+/* Right-side region — user identity + session actions. Mono kicker style
+   for the user line; italic Newsreader for the sign-out link, matching
+   the un-active nav voice. */
+.topbar__end {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-xs);
+  color: var(--color-ink-faint);
+  letter-spacing: var(--tracking-mono-wide);
+  text-transform: uppercase;
+}
+
+.topbar__user {
+  color: var(--color-ink-soft);
+}
+
+.topbar__signout {
+  font-family: var(--font-body);
+  font-size: 0.875rem;
+  font-style: italic;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--color-ink-faint);
+  text-decoration: none;
+  border-bottom: 1px solid var(--color-rule);
+  transition: color 0.12s ease, border-color 0.12s ease;
+}
+
+.topbar__signout:hover {
+  color: var(--color-ink-soft);
+  border-bottom-color: var(--color-ink-faint);
+}

@@ -26,10 +26,7 @@ defmodule ManillumWeb.Layouts do
 
   """
   attr :flash, :map, required: true, doc: "the map of flash messages"
-
-  attr :current_scope, :map,
-    default: nil,
-    doc: "the current [scope](https://hexdocs.pm/phoenix/scopes.html)"
+  attr :current_user, :map, default: nil, doc: "the signed-in Manillum.Accounts.User"
 
   attr :pin_year, :integer, default: nil
   attr :pin_label, :string, default: nil
@@ -44,9 +41,17 @@ defmodule ManillumWeb.Layouts do
     <.page>
       <.topbar active={@active_tab} meta={@meta}>
         <:tab id="today" href={~p"/"}>Today</:tab>
-        <:tab id="conversation" href="/conversation">Conversation</:tab>
-        <:tab id="timeline" href="/timeline">Your timeline</:tab>
-        <:tab id="review" href="/review">Review</:tab>
+        <:tab id="conversations" href={~p"/conversations"}>Conversations</:tab>
+        <:tab id="catalog" href={~p"/catalog"}>Catalog</:tab>
+        <:tab id="drawers" href={~p"/drawers"}>Drawers</:tab>
+        <:tab id="reference" href={~p"/reference"}>Reference</:tab>
+        <:tab id="quiz" href={~p"/quiz"}>Quiz</:tab>
+        <:end_ :if={@current_user}>
+          <span class="topbar__user">{user_display(@current_user)}</span>
+          <.link href={~p"/sign-out"} method="delete" class="topbar__signout">
+            sign out
+          </.link>
+        </:end_>
       </.topbar>
       <.era_band :if={@show_era_band} pin_year={@pin_year} pin_label={@pin_label} />
       <main>
@@ -56,6 +61,12 @@ defmodule ManillumWeb.Layouts do
     </.page>
     """
   end
+
+  # Display name for the topbar identity strip. The MVP user resource has
+  # an `email` `Ash.CIString` attribute (magic-link auth). First name /
+  # display fields may land later.
+  defp user_display(%{email: email}), do: to_string(email)
+  defp user_display(_), do: ""
 
   @doc """
   Shows the flash group with standard titles and content.

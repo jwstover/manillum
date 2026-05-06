@@ -1,0 +1,86 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   .stub-page — shared layout for the M-32 navigation skeleton stubs.
+   Each route under the app shell renders a page title in display
+   typography, a 1–2 sentence "this is where X will live" note, and a
+   bulleted list of the affordances the real screen will provide. These
+   classes will be removed once Streams D / E / F / G's real LiveViews
+   replace the stubs.
+   ───────────────────────────────────────────────────────────────────── */
+
+.stub-page {
+  padding: 4rem var(--margin-page-x) 6rem;
+  max-width: 60rem;
+}
+
+.stub-page__title {
+  font-family: var(--font-display);
+  font-size: 3rem;
+  font-weight: 500;
+  font-style: italic;
+  letter-spacing: -0.012em;
+  line-height: 1.05;
+  color: var(--color-ink);
+  margin: 0.75rem 0 1.5rem;
+}
+
+.stub-page__lede {
+  font-family: var(--font-body);
+  font-size: 1.0625rem;
+  line-height: 1.6;
+  color: var(--color-ink-soft);
+  max-width: 36rem;
+  margin: 0 0 2rem;
+}
+
+.stub-page__affordances-head {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-xs);
+  letter-spacing: var(--tracking-mono-wide);
+  text-transform: uppercase;
+  color: var(--color-ink-faint);
+  margin: 0 0 0.75rem;
+}
+
+.stub-page__affordances {
+  font-family: var(--font-body);
+  font-size: 1rem;
+  line-height: 1.6;
+  color: var(--color-ink);
+  list-style: none;
+  margin: 0 0 2rem;
+  padding: 0;
+  max-width: 38rem;
+}
+
+.stub-page__affordances li {
+  position: relative;
+  padding: 0.25rem 0 0.25rem 1.25rem;
+  border-bottom: 1px solid var(--color-rule);
+}
+
+.stub-page__affordances li:last-child {
+  border-bottom: none;
+}
+
+.stub-page__affordances li::before {
+  content: "—";
+  position: absolute;
+  left: 0;
+  color: var(--color-ink-faint);
+}
+
+.stub-page__back {
+  display: inline-block;
+  font-family: var(--font-body);
+  font-style: italic;
+  font-size: 0.9375rem;
+  color: var(--color-ink-faint);
+  text-decoration: none;
+  border-bottom: 1px solid var(--color-rule);
+  transition: color 0.12s ease, border-color 0.12s ease;
+}
+
+.stub-page__back:hover {
+  color: var(--color-ink-soft);
+  border-bottom-color: var(--color-ink-faint);
+}
