@@ -1,29 +1,29 @@
 defmodule ManillumWeb.HomeLive do
   @moduledoc """
   Placeholder root page. Will become the "Today" view once Streams D / E / F land.
+  Renders inside the shared `Layouts.app` shell so it shares nav / sign-out
+  with every other authenticated route.
   """
 
   use ManillumWeb, :live_view
 
-  on_mount {ManillumWeb.LiveUserAuth, :live_user_optional}
+  on_mount {ManillumWeb.LiveUserAuth, :live_user_required}
 
   @impl true
   def mount(_params, _session, socket) do
-    {:ok, socket}
+    {:ok, assign(socket, :page_title, "Today")}
   end
 
   @impl true
   def render(assigns) do
     ~H"""
-    <.page>
-      <.topbar active="today" tagline="— a quiet workshop">
-        <:tab id="today" href={~p"/"}>Today</:tab>
-        <:tab id="components" href="/dev/components">Components</:tab>
-      </.topbar>
-      <.era_band pin_year={2026} pin_label="today" />
-
-      <ManillumWeb.Layouts.flash_group flash={@flash} />
-
+    <Layouts.app
+      flash={@flash}
+      current_user={@current_user}
+      active_tab="today"
+      pin_year={2026}
+      pin_label="today"
+    >
       <main class="home">
         <.kicker>● Manillum · today</.kicker>
         <h1 class="home__title">Nothing filed yet.</h1>
@@ -33,7 +33,7 @@ defmodule ManillumWeb.HomeLive do
           review queue will surface here.
         </p>
       </main>
-    </.page>
+    </Layouts.app>
 
     <style>
       .home {

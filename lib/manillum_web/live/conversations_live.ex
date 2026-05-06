@@ -11,11 +11,19 @@ defmodule ManillumWeb.ConversationsLive do
   def render(assigns) do
     ~H"""
     <div class="conversation">
-      <.topbar active="conversation" meta={@topbar_meta}>
+      <.topbar active="conversations" meta={@topbar_meta}>
         <:tab id="today" href={~p"/"}>Today</:tab>
-        <:tab id="conversation" href={~p"/conversations"}>Conversation</:tab>
-        <:tab id="timeline" href={~p"/conversations"}>Your timeline</:tab>
-        <:tab id="review" href={~p"/conversations"}>Review</:tab>
+        <:tab id="conversations" href={~p"/conversations"}>Conversations</:tab>
+        <:tab id="catalog" href={~p"/catalog"}>Catalog</:tab>
+        <:tab id="drawers" href={~p"/drawers"}>Drawers</:tab>
+        <:tab id="reference" href={~p"/reference"}>Reference</:tab>
+        <:tab id="quiz" href={~p"/quiz"}>Quiz</:tab>
+        <:end_ :if={@current_user}>
+          <span class="topbar__user">{user_display(@current_user)}</span>
+          <.link href={~p"/sign-out"} method="delete" class="topbar__signout">
+            sign out
+          </.link>
+        </:end_>
       </.topbar>
       <.era_band events={@mentions} />
 
@@ -489,6 +497,9 @@ defmodule ManillumWeb.ConversationsLive do
   end
 
   defp pad_qry(_), do: "----"
+
+  defp user_display(%{email: email}), do: to_string(email)
+  defp user_display(_), do: ""
 
   defp rail_title(nil), do: "Untitled conversation"
   defp rail_title(""), do: "Untitled conversation"
