@@ -26,9 +26,16 @@ defmodule ManillumWeb.Router do
     pipe_through :browser
 
     ash_authentication_live_session :authenticated_routes do
-      live "/conversations", ConversationsLive
-      live "/conversations/:conversation_id", ConversationsLive
       live "/", HomeLive, :index
+      live "/conversations", ConversationsLive
+      live "/conversations/new", ConversationsNewLive
+      live "/conversations/:conversation_id", ConversationsLive
+      live "/catalog", CatalogLive
+      live "/drawers", DrawersLive, :index
+      live "/drawers/:drawer", DrawersLive, :show
+      live "/reference", ReferenceLive
+      live "/cards/:id", CardLive
+      live "/quiz", QuizLive
     end
   end
 

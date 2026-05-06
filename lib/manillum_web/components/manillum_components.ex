@@ -114,6 +114,8 @@ defmodule ManillumWeb.ManillumComponents do
     attr :href, :string, required: true
   end
 
+  slot :end_, doc: "right-side content (e.g. user info + sign-out)"
+
   def topbar(assigns) do
     ~H"""
     <div class="topbar">
@@ -131,6 +133,7 @@ defmodule ManillumWeb.ManillumComponents do
         </a>
       </nav>
       <div :if={@meta} class="topbar__meta">{@meta}</div>
+      <div :if={@end_ != []} class="topbar__end">{render_slot(@end_)}</div>
     </div>
     """
   end
@@ -712,6 +715,36 @@ defmodule ManillumWeb.ManillumComponents do
     <div class={["page", @dim && "page--dim", @class]}>
       {render_slot(@inner_block)}
     </div>
+    """
+  end
+
+  # ────────────────────────────────────────────────────────────────────
+  # stub_page — placeholder body used by the M-32 navigation skeleton.
+  # Renders title + lede + bulleted affordance list + back-link to home.
+  # Will go away as each route's real LiveView lands.
+  # ────────────────────────────────────────────────────────────────────
+  attr :kicker, :string, required: true
+  attr :title, :string, required: true
+  attr :lede, :string, required: true
+  attr :affordances, :list, default: []
+  attr :back_href, :string, default: "/"
+
+  def stub_page(assigns) do
+    ~H"""
+    <main class="stub-page">
+      <.kicker>{@kicker}</.kicker>
+      <h1 class="stub-page__title">{@title}</h1>
+      <p class="stub-page__lede">{@lede}</p>
+
+      <p :if={@affordances != []} class="stub-page__affordances-head">
+        Affordances landing here
+      </p>
+      <ul :if={@affordances != []} class="stub-page__affordances">
+        <li :for={affordance <- @affordances}>{affordance}</li>
+      </ul>
+
+      <a class="stub-page__back" href={@back_href}>← back to today</a>
+    </main>
     """
   end
 
