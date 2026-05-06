@@ -134,8 +134,9 @@
 
 .conversation__rail-link {
   display: grid;
-  grid-template-columns: 3rem 1fr;
+  grid-template-columns: 1fr auto;
   column-gap: 0.625rem;
+  row-gap: 0.125rem;
   align-items: baseline;
   padding: 0.5rem 1.125rem;
   text-decoration: none;
@@ -150,7 +151,17 @@
   text-transform: uppercase;
 }
 
+.conversation__rail-ago {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-2xs);
+  letter-spacing: var(--tracking-mono);
+  color: var(--color-ink-faint);
+  text-transform: lowercase;
+  text-align: right;
+}
+
 .conversation__rail-title {
+  grid-column: 1 / -1;
   font-family: var(--font-body);
   font-size: 0.8125rem;
   color: var(--color-ink-soft);

@@ -11,7 +11,7 @@ defmodule ManillumWeb.ConversationsLive do
   def render(assigns) do
     ~H"""
     <div class="conversation">
-      <.topbar active="conversation">
+      <.topbar active="conversation" meta={@topbar_meta}>
         <:tab id="today" href={~p"/"}>Today</:tab>
         <:tab id="conversation" href={~p"/conversations"}>Conversation</:tab>
         <:tab id="timeline" href={~p"/conversations"}>Your timeline</:tab>
@@ -22,7 +22,7 @@ defmodule ManillumWeb.ConversationsLive do
       <div class="conversation__body">
         <aside class="conversation__rail">
           <div class="conversation__rail-head">
-            <.meta_label tone={:oxblood}>Conversations</.meta_label>
+            <.meta_label tone={:oxblood}>Your Conversations</.meta_label>
             <.btn variant={:ghost} size={:sm} href={~p"/conversations"}>
               + new
             </.btn>
@@ -44,7 +44,10 @@ defmodule ManillumWeb.ConversationsLive do
                 class="conversation__rail-link"
               >
                 <span class="conversation__rail-qry">
-                  {pad_qry(conversation.query_number)}
+                  № {pad_qry(conversation.query_number)}
+                </span>
+                <span class="conversation__rail-ago">
+                  {rail_ago(conversation)}
                 </span>
                 <span class="conversation__rail-title">
                   {rail_title(conversation.title)}
@@ -59,6 +62,7 @@ defmodule ManillumWeb.ConversationsLive do
             :if={@conversation}
             query_number={@conversation.query_number}
             title={@conversation.title}
+            exchanges={@exchange_count}
             opened_at={@conversation.inserted_at}
           />
 
@@ -230,6 +234,8 @@ defmodule ManillumWeb.ConversationsLive do
       |> assign(:agent_responding, false)
       |> assign(:tool_data_warning_shown?, false)
       |> assign(:conversation, nil)
+      |> assign(:exchange_count, 0)
+      |> assign(:topbar_meta, topbar_meta(conversations))
       |> assign(:message_form, nil)
       |> assign(:mentions, [])
       |> stream_configure(:messages, dom_id: &"message-#{&1.id}")
@@ -269,6 +275,7 @@ defmodule ManillumWeb.ConversationsLive do
       socket
       |> maybe_warn_tool_data(messages)
       |> assign(:conversation, conversation)
+      |> assign(:exchange_count, count_exchanges(messages))
       |> assign(:agent_responding, agent_response_pending?(messages))
       |> assign(:mentions, mentions)
       |> stream(:messages, messages, reset: true)
@@ -284,6 +291,7 @@ defmodule ManillumWeb.ConversationsLive do
 
     socket
     |> assign(:conversation, nil)
+    |> assign(:exchange_count, 0)
     |> assign(:agent_responding, false)
     |> assign(:mentions, [])
     |> stream(:messages, [], reset: true)
@@ -347,6 +355,7 @@ defmodule ManillumWeb.ConversationsLive do
         |> maybe_warn_tool_data(message)
         |> stream_insert(:messages, message, at: 0)
         |> update_agent_responding(message)
+        |> maybe_bump_exchanges(message)
 
       {:noreply, socket}
     else
@@ -485,6 +494,31 @@ defmodule ManillumWeb.ConversationsLive do
   defp rail_title(""), do: "Untitled conversation"
   defp rail_title(title) when is_binary(title), do: title
 
+  defp rail_ago(%{updated_at: %DateTime{} = dt}), do: format_ago(DateTime.utc_now(), dt)
+
+  defp rail_ago(%{updated_at: %NaiveDateTime{} = dt}),
+    do: format_ago(NaiveDateTime.utc_now(), dt)
+
+  defp rail_ago(_), do: ""
+
+  defp format_ago(now, then) do
+    seconds = abs_diff_seconds(now, then)
+
+    cond do
+      seconds < 60 -> "now"
+      seconds < 3600 -> "#{div(seconds, 60)}m"
+      seconds < 86_400 -> "#{div(seconds, 3600)}h"
+      seconds < 604_800 -> "#{div(seconds, 86_400)}d"
+      true -> "#{div(seconds, 604_800)}w"
+    end
+  end
+
+  defp abs_diff_seconds(%DateTime{} = a, %DateTime{} = b),
+    do: abs(DateTime.diff(a, b, :second))
+
+  defp abs_diff_seconds(%NaiveDateTime{} = a, %NaiveDateTime{} = b),
+    do: abs(NaiveDateTime.diff(a, b, :second))
+
   # Upsert a mention into the assigns list. Broadcasts (and the LiveView
   # tests) deliver maps keyed by atoms; the initial `list_mentions!` load
   # delivers `%Mention{}` structs. The era_band component reads each event
@@ -500,6 +534,24 @@ defmodule ManillumWeb.ConversationsLive do
 
   defp mention_id(%{id: id}), do: id
   defp mention_id(_), do: nil
+
+  defp count_exchanges(messages) do
+    Enum.count(messages, &user_message?/1)
+  end
+
+  defp maybe_bump_exchanges(socket, message) do
+    if user_message?(message) do
+      assign(socket, :exchange_count, socket.assigns.exchange_count + 1)
+    else
+      socket
+    end
+  end
+
+  defp topbar_meta([]), do: nil
+
+  defp topbar_meta(conversations) do
+    "#{length(conversations)} conversations"
+  end
 
   # The PubSub broadcast for messages publishes a plain map (no
   # inserted_at field) — return nil there so the speaker label stays
