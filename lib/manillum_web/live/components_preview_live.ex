@@ -624,6 +624,55 @@ defmodule ManillumWeb.ComponentsPreviewLive do
           <div class="cpv__era">
             <.era_band pin_year={1914} pin_label="sarajevo" dim />
           </div>
+          <div class="cpv__era">
+            <.era_band
+              pin_year={1066}
+              pin_label="hastings"
+              events={[
+                %{
+                  id: "ev-1",
+                  year: -753,
+                  title: "Founding of Rome",
+                  summary: "Traditional date — Romulus and Remus."
+                },
+                %{
+                  id: "ev-2",
+                  year: -44,
+                  month: 3,
+                  day: 15,
+                  title: "Assassination of Caesar",
+                  summary: "Ides of March; the Liberators stab Caesar in the Theatre of Pompey."
+                },
+                %{
+                  id: "ev-3",
+                  year: 476,
+                  title: "Fall of Rome (West)",
+                  summary: "Odoacer deposes Romulus Augustulus."
+                },
+                %{
+                  id: "ev-4",
+                  year: 1066,
+                  month: 10,
+                  day: 14,
+                  title: "Battle of Hastings",
+                  summary: "William the Conqueror defeats Harold Godwinson."
+                },
+                %{
+                  id: "ev-5",
+                  year: 1453,
+                  title: "Fall of Constantinople"
+                },
+                %{
+                  id: "ev-6",
+                  year: 1969,
+                  month: 7,
+                  day: 20,
+                  title: "Apollo 11",
+                  summary: "First crewed lunar landing."
+                }
+              ]}
+            />
+          </div>
         </.cpv_section>
 
         <footer class="cpv__foot">

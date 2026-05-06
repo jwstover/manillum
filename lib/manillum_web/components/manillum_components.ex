@@ -142,6 +142,15 @@ defmodule ManillumWeb.ManillumComponents do
   attr :pin_label, :string, default: nil, doc: "label below the pin"
   attr :dim, :boolean, default: false
 
+  attr :events, :list,
+    default: [],
+    doc: """
+    Mention events to mark on the band. Each event is a map with at least
+    `:year` (required); `:title`, `:summary`, `:month`, `:day`, `:id`,
+    and `:message_id` are surfaced when present. Marks render at
+    `era_x(year)` with a hover tooltip showing the formatted date + title.
+    """
+
   def era_band(assigns) do
     pin_x = if assigns.pin_year, do: era_x(assigns.pin_year), else: nil
 
@@ -178,6 +187,36 @@ defmodule ManillumWeb.ManillumComponents do
             {label}
           </div>
         <% end %>
+        <%= for event <- @events do %>
+          <% x = event_x(event)
+          tooltip_anchor = tooltip_anchor_for(x) %>
+          <a
+            :if={x}
+            class="era_band__event"
+            style={"--event-x:#{pct(x)}"}
+            href={event_href(event)}
+            data-mention-id={Map.get(event, :id)}
+          >
+            <span class={["era_band__event-tooltip", "era_band__event-tooltip--#{tooltip_anchor}"]}>
+              <span class="era_band__event-head">
+                <span class="era_band__event-year">{event_year_magnitude(event)}</span>
+                <span class="era_band__event-meta">
+                  {event_period(event)} · {String.upcase(event_era_label(event))}
+                </span>
+              </span>
+              <span :if={Map.get(event, :title)} class="era_band__event-title">
+                {Map.get(event, :title)}
+              </span>
+              <span :if={event_subdate(event)} class="era_band__event-subtitle">
+                {event_subdate(event)}
+              </span>
+              <span :if={Map.get(event, :summary)} class="era_band__event-rule"></span>
+              <span :if={Map.get(event, :summary)} class="era_band__event-body">
+                {Map.get(event, :summary)}
+              </span>
+            </span>
+          </a>
+        <% end %>
         <div :if={@pin_year} class="era_band__pin" style={"--pin-x:#{pct(@pin_x)}"}>
           <div class={["era_band__pin-label", "era_band__pin-label--#{@pin_anchor}"]}>
             {format_year(@pin_year)}<span :if={@pin_label}> · {@pin_label}</span>
@@ -187,6 +226,99 @@ defmodule ManillumWeb.ManillumComponents do
     </div>
     """
   end
+
+  # Compute the band x-position for an event, returning nil if it lacks a
+  # year (defensive — the LiveView is supposed to filter these, but the
+  # component shouldn't crash on a malformed payload).
+  defp event_x(%{year: year}) when is_integer(year), do: era_x(year)
+  defp event_x(_), do: nil
+
+  # Anchor the tooltip to a band edge when the mark sits near it, so the
+  # popover doesn't overflow horizontally.
+  defp tooltip_anchor_for(nil), do: :center
+  defp tooltip_anchor_for(x) when x < 0.12, do: :left
+  defp tooltip_anchor_for(x) when x > 0.88, do: :right
+  defp tooltip_anchor_for(_), do: :center
+
+  defp event_href(%{message_id: id}) when is_binary(id), do: "#message-#{id}"
+  defp event_href(_), do: nil
+
+  defp event_year_magnitude(%{year: year}) when is_integer(year), do: abs(year)
+  defp event_year_magnitude(_), do: ""
+
+  defp event_period(%{year: year}) when is_integer(year) and year < 0, do: "BC"
+  defp event_period(_), do: "AD"
+
+  defp event_era_label(%{year: year}) when is_integer(year) do
+    {idx, _, _} = locate_era(year)
+
+    case Enum.at(eras(), idx) do
+      {label, _, _} -> label
+      _ -> ""
+    end
+  end
+
+  defp event_era_label(_), do: ""
+
+  # The event subtitle renders the day/month part of the date (the year
+  # already lives in the big year header). Returns nil when month is
+  # absent — a year-only mention has no subdate to show.
+  defp event_subdate(%{month: m, day: d}) when is_integer(m) and is_integer(d),
+    do: "#{d} #{month_name(m)}"
+
+  defp event_subdate(%{month: m}) when is_integer(m), do: month_name(m)
+  defp event_subdate(_), do: nil
+
+  @doc """
+  Format an event's date with the precision Livy supplied. Examples:
+
+      iex> format_event_date(%{year: 1066})
+      "1066"
+
+      iex> format_event_date(%{year: 1066, month: 10})
+      "October 1066"
+
+      iex> format_event_date(%{year: 1066, month: 10, day: 14})
+      "14 October 1066"
+
+      iex> format_event_date(%{year: -44, month: 3, day: 15})
+      "15 March 44 BC"
+
+      iex> format_event_date(%{year: -753})
+      "753 BC"
+  """
+  @spec format_event_date(map()) :: String.t()
+  def format_event_date(%{year: year} = event) do
+    month = Map.get(event, :month)
+    day = Map.get(event, :day)
+    format_event_date(year, month, day)
+  end
+
+  @spec format_event_date(integer(), integer() | nil, integer() | nil) :: String.t()
+  def format_event_date(year, month, day) when is_integer(year) do
+    case {month, day} do
+      {nil, _} -> format_year(year)
+      {m, nil} -> "#{month_name(m)} #{format_year(year)}"
+      {m, d} -> "#{d} #{month_name(m)} #{format_year(year)}"
+    end
+  end
+
+  @month_names %{
+    1 => "January",
+    2 => "February",
+    3 => "March",
+    4 => "April",
+    5 => "May",
+    6 => "June",
+    7 => "July",
+    8 => "August",
+    9 => "September",
+    10 => "October",
+    11 => "November",
+    12 => "December"
+  }
+
+  defp month_name(m) when m in 1..12, do: Map.fetch!(@month_names, m)
 
   # ────────────────────────────────────────────────────────────────────
   # card — recto/verso index card. The signature surface.

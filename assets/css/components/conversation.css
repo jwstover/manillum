@@ -1,39 +1,43 @@
 /* ─────────────────────────────────────────────────────────────────────────
    .conversation — the chat-to-card surface (Slice 2 backend / Slice 9
-   visual restyle). Linen page with a left rail of past conversations, a
-   centre column carrying the active dialogue, and a right rail for
-   provenance. The composer is a separate component (`./composer.css`).
+   visual restyle). Linen page with persistent topbar + era band spanning
+   full width, then a 2-column body underneath: left rail of past
+   conversations and centre column carrying the active dialogue. The
+   composer is a separate component (`./composer.css`).
 
    Markup pattern:
      <div class="conversation">
-       <aside class="conversation__rail">…</aside>
-       <main class="conversation__main">
-         <.topbar/> <.era_band/>
-         <header class="convo_header">…</header>
-         <div class="conversation__thread">
-           <div class="message message--user">…</div>
-           <div class="message message--assistant">…</div>
-         </div>
-         <.composer/>
-       </main>
+       <.topbar/>
+       <.era_band/>
+       <div class="conversation__body">
+         <aside class="conversation__rail">…</aside>
+         <main class="conversation__main">
+           <header class="convo_header">…</header>
+           <div class="conversation__thread">…</div>
+           <.composer/>
+         </main>
+       </div>
      </div>
    ───────────────────────────────────────────────────────────────────── */
 
 .conversation {
-  display: grid;
-  grid-template-columns: 15rem 1fr;
-  /* Pin the grid to viewport height and force the (implicit) row to fit
-   * inside it. Without `grid-template-rows: minmax(0, 1fr)` the row's
-   * intrinsic size tracks its content, so a long transcript pushes
-   * `.conversation__main` past the 100dvh container — the topbar / era
-   * band / convo header / composer scroll along with the thread instead
-   * of staying pinned. `minmax(0, 1fr)` allocates the full container
-   * height to the row but allows it to shrink below content-min, which
-   * is the cue the inner flex column needs to honour `min-height: 0` on
-   * `.conversation__thread` and start scrolling internally. */
-  grid-template-rows: minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   height: 100dvh;
   background: var(--color-linen);
+}
+
+.conversation__body {
+  display: grid;
+  grid-template-columns: 15rem minmax(0, 1fr);
+  /* `minmax(0, 1fr)` on the row lets `.conversation__main` shrink below
+   * its intrinsic content height. Without it, a long transcript would
+   * push the row past the parent's available height and the composer
+   * would scroll off-screen instead of staying pinned to the bottom. */
+  grid-template-rows: minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
 }
 
 .conversation__main {
@@ -397,3 +401,4 @@
   0%, 60%, 100% { opacity: 0.25; }
   30% { opacity: 1; }
 }
+
