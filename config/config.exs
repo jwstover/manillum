@@ -12,7 +12,13 @@ config :ash_oban, pro?: false
 config :manillum, Oban,
   engine: Oban.Engines.Basic,
   notifier: Oban.Notifiers.Postgres,
-  queues: [default: 10, cataloging: 5, chat_responses: [limit: 10], conversations: [limit: 10]],
+  queues: [
+    default: 10,
+    cataloging: 5,
+    card_vectorizer: 5,
+    chat_responses: [limit: 10],
+    conversations: [limit: 10]
+  ],
   repo: Manillum.Repo,
   plugins: [{Oban.Plugins.Cron, []}]
 
