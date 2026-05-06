@@ -8,25 +8,44 @@ defmodule Manillum.Archive.Capture.Changes.RunCataloging do
        filters on `:pending`).
     2. Call `:extract_drafts` (prompt-backed action) to get a list of
        `Manillum.Archive.Cataloging.DraftCard`s from the source text.
-    3. For each DraftCard: detect call-number collision via
-       `:propose_call_number` and persist a `:draft` Card row with
-       `capture_id` set when the segments are unique.
-    4. Set the changeset's final status to `:catalogued` (with
-       `error_reason` summarizing any per-draft skips) or `:failed` on
-       unrecoverable error.
-    5. Broadcast `:cards_drafted` / `:cards_drafting_failed` on
+    3. Embed each draft's `back` text in a single batched call to
+       `Manillum.AI.Embedding.OpenAI`.
+    4. For each DraftCard:
+         - check call-number collision via `:propose_call_number`
+         - run cosine-similarity search via
+           `Manillum.Archive.find_duplicates/3`
+         - persist a `:draft` Card row with `capture_id`,
+           `duplicate_candidate_ids`, and (on call-number collision)
+           `collision_card_id` set. The filing tray (Slice 10 / M-28)
+           surfaces both signals so the user can pick disambiguating
+           segments or merge intent before filing.
+    5. Set the changeset's final status to `:catalogued` (with
+       `error_reason` summarizing any per-draft create errors) or
+       `:failed` on unrecoverable error.
+    6. Broadcast `:cards_drafted` / `:cards_drafting_failed` on
        `"user:\#{user_id}:cataloging"` per spec §7.3.
 
-  ## Deferred (per Slice 4 review)
+  ## Why call-number collisions land as drafts now
 
-  Semantic duplicate detection (embedding `back` text and looking up
-  cosine-similar existing cards via `Archive.find_duplicates/2`) is
-  deferred to a follow-on. When that lands, the per-draft step in #3
-  gains an embedding + dup-candidate fetch, and the persisted draft
-  carries `duplicate_candidate_ids`. Reactive cross-reference linking
-  (scan `entities` against the existing archive at file-time, plus
-  vector + LLM filter for relevance) lands in M-34, also gated on the
-  embedding index from the dup-detection slice.
+  Slice 4 silently skipped collision drafts and recorded a note in
+  `Capture.error_reason`. With dup-detection landing here in Slice 6,
+  the colliding-call-number branch persists the draft instead and flags
+  it via `Card.collision_card_id`. The filing tray gets a real signal
+  to reconcile against rather than a phantom skipped result.
+
+  ## Why `back` is embedded twice per cataloged card
+
+  Each draft's `back` is embedded once here (upfront, to query
+  `find_duplicates` against the existing archive) and a second time
+  ~1s later by the AshAI `vectorize` block's `:ash_oban` trigger
+  (after the row exists, to populate `Card.embedding` for *future*
+  dup-queries against this card). Same model, same input, same vector.
+
+  Intentional redundancy: the two paths answer different questions
+  (this draft's similarity vs this card's discoverability), and at
+  MVP scale the redundant compute is ~$0.0000006 per card. See the
+  2026-05-06 decision callout in the project index for the full
+  trade-off.
 
   ## Why the change goes through `before_action`
 
@@ -40,6 +59,8 @@ defmodule Manillum.Archive.Capture.Changes.RunCataloging do
 
   use Ash.Resource.Change
 
+  alias Manillum.AI.Embedding.OpenAI, as: Embedder
+  alias Manillum.Archive
   alias Manillum.Archive.Capture
   alias Manillum.Archive.Card
 
@@ -85,7 +106,8 @@ defmodule Manillum.Archive.Capture.Changes.RunCataloging do
 
   defp extract_and_persist(capture) do
     with {:ok, drafts} <- extract_drafts(capture) do
-      {persisted, skipped} = persist_drafts(capture, drafts)
+      embeddings = embed_drafts(capture, drafts)
+      {persisted, skipped} = persist_drafts(capture, drafts, embeddings)
       {:ok, %{persisted: persisted, skipped: skipped}}
     end
   end
@@ -96,28 +118,67 @@ defmodule Manillum.Archive.Capture.Changes.RunCataloging do
     |> Ash.run_action(authorize?: false)
   end
 
-  defp persist_drafts(capture, drafts) do
-    Enum.reduce(drafts, {[], []}, fn draft, {persisted, skipped} ->
-      case persist_draft(capture, draft) do
+  # Single batched embedding call across all drafts. On error, log and
+  # fall through with `nil` embeddings — drafts still persist (without
+  # `duplicate_candidate_ids`); the async vectorize trigger backfills
+  # `Card.embedding` once the row is created, so dup-detection is just
+  # delayed rather than lost.
+  defp embed_drafts(capture, drafts) do
+    inputs = Enum.map(drafts, & &1.back)
+
+    case Embedder.generate(inputs, []) do
+      {:ok, vectors} when length(vectors) == length(drafts) ->
+        vectors
+
+      {:ok, _vectors} ->
+        Logger.warning(fn ->
+          "[cataloging] capture=#{capture.id} embedding count mismatch — " <>
+            "skipping dup-detection for this batch"
+        end)
+
+        List.duplicate(nil, length(drafts))
+
+      {:error, reason} ->
+        Logger.warning(fn ->
+          "[cataloging] capture=#{capture.id} embedding call failed: #{inspect(reason)} — " <>
+            "skipping dup-detection for this batch"
+        end)
+
+        List.duplicate(nil, length(drafts))
+    end
+  end
+
+  defp persist_drafts(capture, drafts, embeddings) do
+    drafts
+    |> Enum.zip(embeddings)
+    |> Enum.reduce({[], []}, fn {draft, embedding}, {persisted, skipped} ->
+      case persist_draft(capture, draft, embedding) do
         {:ok, card} -> {persisted ++ [card], skipped}
         {:skipped, reason} -> {persisted, skipped ++ [{draft, reason}]}
       end
     end)
   end
 
-  defp persist_draft(capture, draft) do
+  defp persist_draft(capture, draft, embedding) do
     case propose_call_number(capture.user_id, draft) do
       {:resolved, _proposal} ->
-        create_card(capture, draft)
+        candidates = Archive.find_duplicates(capture.user_id, embedding)
+        create_card(capture, draft, %{duplicate_candidate_ids: candidates})
 
       {:collision, existing_card_id} ->
         Logger.info(fn ->
-          "[cataloging] capture=#{capture.id} skipping draft slug=#{draft.slug} " <>
+          "[cataloging] capture=#{capture.id} draft slug=#{draft.slug} " <>
             "drawer=#{draft.drawer} date_token=#{draft.date_token} — " <>
-            "collides with card #{existing_card_id}"
+            "call-number collides with card #{existing_card_id}; " <>
+            "persisting draft with collision flag"
         end)
 
-        {:skipped, {:collision, existing_card_id}}
+        candidates = Archive.find_duplicates(capture.user_id, embedding)
+
+        create_card(capture, draft, %{
+          collision_card_id: existing_card_id,
+          duplicate_candidate_ids: candidates
+        })
 
       {:error, reason} ->
         Logger.warning(fn ->
@@ -146,18 +207,20 @@ defmodule Manillum.Archive.Capture.Changes.RunCataloging do
     end
   end
 
-  defp create_card(capture, draft) do
-    attrs = %{
-      user_id: capture.user_id,
-      capture_id: capture.id,
-      drawer: draft.drawer,
-      date_token: draft.date_token,
-      slug: draft.slug,
-      card_type: draft.card_type,
-      front: draft.front,
-      back: draft.back,
-      entities: draft.entities || []
-    }
+  defp create_card(capture, draft, extra_attrs) do
+    attrs =
+      %{
+        user_id: capture.user_id,
+        capture_id: capture.id,
+        drawer: draft.drawer,
+        date_token: draft.date_token,
+        slug: draft.slug,
+        card_type: draft.card_type,
+        front: draft.front,
+        back: draft.back,
+        entities: draft.entities || []
+      }
+      |> Map.merge(extra_attrs)
 
     Card
     |> Ash.Changeset.for_create(:draft, attrs)
@@ -179,7 +242,7 @@ defmodule Manillum.Archive.Capture.Changes.RunCataloging do
   defp maybe_set_skipped_note(changeset, []), do: changeset
 
   defp maybe_set_skipped_note(changeset, skipped) do
-    note = "Skipped #{length(skipped)} draft(s) due to call-number collisions or create errors."
+    note = "Skipped #{length(skipped)} draft(s) due to create errors."
     Ash.Changeset.force_change_attribute(changeset, :error_reason, note)
   end
 

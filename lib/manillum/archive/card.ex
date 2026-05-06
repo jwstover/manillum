@@ -11,18 +11,55 @@ defmodule Manillum.Archive.Card do
 
   Slice 3 lands the resource skeleton with `:read` defaults. Stream B's
   CRUD actions (`:draft`, `:propose_call_number`, `:file`) follow in
-  M-15/M-16/M-17. The `embedding` column and vectorize block ship in
-  Slice 4 alongside the cataloging pipeline.
+  M-15/M-16/M-17. The `embedding` column + vectorize block ship in
+  Slice 6 (M-24) alongside the dup-detection pipeline.
+
+  ## Embeddings
+
+  `back` is vectorized into `:embedding` (1536 dims via
+  `Manillum.AI.Embedding.OpenAI`) using the `:ash_oban` strategy:
+  creates and `back`-changing updates enqueue an
+  `:ash_ai_update_embeddings` job on the `:card_vectorizer` queue,
+  which calls the OpenAI embeddings endpoint and writes the vector
+  back to the row. Status flips and renames don't touch `back`, so
+  they don't trigger regeneration. The HNSW cosine-similarity index
+  is added by `priv/repo/migrations/*_add_card_embedding_hnsw_index.exs`
+  and powers `Manillum.Archive.find_duplicates/2`.
   """
 
   use Ash.Resource,
     otp_app: :manillum,
     domain: Manillum.Archive,
-    data_layer: AshPostgres.DataLayer
+    data_layer: AshPostgres.DataLayer,
+    extensions: [AshAi, AshOban]
 
   postgres do
     table "cards"
     repo Manillum.Repo
+
+    # Translate the partial-index `where` clause on `:unique_call_number`
+    # to SQL for the migration generator. Must stay in sync with the
+    # identity's `where: expr(status != :draft)` below.
+    identity_wheres_to_sql unique_call_number: "status != 'draft'"
+  end
+
+  vectorize do
+    attributes back: :embedding
+    strategy :ash_oban
+    embedding_model Manillum.AI.Embedding.OpenAI
+  end
+
+  oban do
+    triggers do
+      trigger :ash_ai_update_embeddings do
+        action :ash_ai_update_embeddings
+        queue :card_vectorizer
+        scheduler_cron false
+        worker_read_action :read
+        worker_module_name Manillum.Archive.Card.AshOban.Worker.UpdateEmbeddings
+        scheduler_module_name Manillum.Archive.Card.AshOban.Scheduler.UpdateEmbeddings
+      end
+    end
   end
 
   actions do
@@ -44,7 +81,9 @@ defmodule Manillum.Archive.Card do
         :card_type,
         :front,
         :back,
-        :entities
+        :entities,
+        :duplicate_candidate_ids,
+        :collision_card_id
       ]
 
       change set_attribute(:status, :draft)
@@ -53,16 +92,16 @@ defmodule Manillum.Archive.Card do
     update :file do
       description """
       Promote a `:draft` Card to `:filed`. Rejects any current status other
-      than `:draft`. Spec §5 Stream B task 2 also calls for kicking off
-      async embedding generation and creating tag/link associations from
-      this action; those land in Slice 4 / Gate B.2 / B.3. For Gate B.1
-      this is just the status transition.
+      than `:draft`.
 
-      Note on uniqueness: the DB-level identity on `(user_id, drawer, slug)`
-      is the source of truth and applies to drafts as well as filed cards.
-      Filing doesn't change segments, so it can't introduce a collision —
-      the cataloging pipeline (Slice 4) calls `:propose_call_number` first
-      and disambiguates the slug before drafting.
+      Note on uniqueness: the DB-level
+      `unique_call_number` identity on `(user_id, drawer, date_token, slug)`
+      is scoped to non-draft cards (Slice 6 / M-24). Drafts may coexist with
+      colliding segments — the cataloging pipeline persists them with
+      `collision_card_id` set, and the filing tray gates the file affordance
+      until the user resolves the collision (typically by renaming the
+      colliding card or this draft via `:rename`). Filing a still-colliding
+      draft will fail at the DB level as a safety net.
       """
 
       accept []
@@ -190,6 +229,36 @@ defmodule Manillum.Archive.Card do
       """
     end
 
+    attribute :duplicate_candidate_ids, {:array, :uuid} do
+      default []
+      allow_nil? false
+      public? true
+
+      description """
+      Draft-phase metadata: ids of existing filed cards that are
+      semantically near-duplicates of this draft (cosine similarity over
+      `Manillum.Archive.find_duplicates/2`'s threshold). Populated by the
+      cataloging pipeline alongside the draft Card row. The filing tray
+      surfaces these as "this looks similar to existing card X" warnings;
+      the user resolves by editing the slug, discarding the draft, or
+      filing anyway. Empty list once the user has reviewed.
+      """
+    end
+
+    attribute :collision_card_id, :uuid do
+      public? true
+
+      description """
+      Draft-phase metadata: id of an existing Card whose
+      `(drawer, date_token, slug)` segments match this draft's. Set by
+      the cataloging pipeline when `:propose_call_number` returns
+      `:collision`; the draft is persisted with content but flagged so
+      the filing tray can show it alongside the colliding card and let
+      the user pick disambiguating segments before filing. `nil` for
+      drafts whose call_number resolved cleanly.
+      """
+    end
+
     create_timestamp :inserted_at
     update_timestamp :updated_at
   end
@@ -233,6 +302,12 @@ defmodule Manillum.Archive.Card do
     # user — i.e. (drawer, date_token, slug) together. Two cards with the
     # same drawer + slug but different date_tokens coexist naturally; only
     # full-segment collisions trigger disambiguation in `:propose_call_number`.
-    identity :unique_call_number, [:user_id, :drawer, :date_token, :slug]
+    #
+    # Scoped to non-draft cards (Slice 6 / M-24): drafts may persist with
+    # colliding segments and a `collision_card_id` flag so the filing tray
+    # can surface them; the constraint applies once a card is filed and
+    # the segments become canonical.
+    identity :unique_call_number, [:user_id, :drawer, :date_token, :slug],
+      where: expr(status != :draft)
   end
 end

@@ -22,6 +22,10 @@ defmodule Manillum.Archive.CaptureTest do
     Ash.Seed.seed!(Manillum.Accounts.User, %{email: email})
   end
 
+  defp unit_vector(axis) do
+    Enum.map(0..1535, fn i -> if i == axis, do: 1.0, else: 0.0 end)
+  end
+
   defp draft_attrs(overrides \\ %{}) do
     base = %{
       "card_type" => "event",
@@ -167,6 +171,7 @@ defmodule Manillum.Archive.CaptureTest do
     test "happy path: persists drafts, flips to :catalogued, broadcasts :cards_drafted",
          %{user: user, capture: capture} do
       ReqLLMStub.put_response([draft_attrs()])
+      ReqLLMStub.put_embedding(List.duplicate(0.0, 1536))
 
       Phoenix.PubSub.subscribe(Manillum.PubSub, "user:#{user.id}:cataloging")
 
@@ -187,6 +192,8 @@ defmodule Manillum.Archive.CaptureTest do
       assert card.user_id == user.id
       assert card.capture_id == capture.id
       assert card.slug == "COLLAPSE"
+      assert card.collision_card_id == nil
+      assert card.duplicate_candidate_ids == []
 
       assert_receive {:cards_drafted, payload}, 500
       assert payload.capture_id == capture.id
@@ -194,10 +201,10 @@ defmodule Manillum.Archive.CaptureTest do
       assert payload.conversation_id == capture.conversation_id
     end
 
-    test "skips drafts that collide on (user, drawer, date_token, slug) and notes the skip",
+    test "call-number collision: persists draft with collision_card_id set (Slice 6)",
          %{user: user, capture: capture} do
-      # Pre-seed a card occupying the slug the LLM will propose.
-      _existing =
+      # Pre-seed a filed card occupying the slug the LLM will propose.
+      existing =
         Ash.Seed.seed!(Card, %{
           user_id: user.id,
           drawer: :ANT,
@@ -210,24 +217,63 @@ defmodule Manillum.Archive.CaptureTest do
         })
 
       ReqLLMStub.put_response([draft_attrs()])
+      ReqLLMStub.put_embedding(List.duplicate(0.0, 1536))
 
       assert {:ok, catalogued} =
                capture
                |> Ash.Changeset.for_update(:catalog, %{})
                |> Ash.update()
 
-      # Status still flips to :catalogued (not :failed) — collisions are a
-      # per-draft skip, not a pipeline failure.
+      # Status flips to :catalogued (not :failed) — the collision is
+      # surfaced via Card.collision_card_id, not a pipeline failure.
       assert catalogued.status == :catalogued
-      assert catalogued.error_reason =~ "collisions or create errors"
+      assert catalogued.error_reason == nil
 
-      # No new draft was persisted (the only draft would have collided).
-      drafts_for_capture =
+      [draft] =
         Card
         |> Ash.Query.filter(capture_id == ^capture.id)
         |> Ash.read!(authorize?: false)
 
-      assert drafts_for_capture == []
+      assert draft.status == :draft
+      assert draft.slug == "COLLAPSE"
+      assert draft.collision_card_id == existing.id
+    end
+
+    test "near-duplicate filed card: draft persists with duplicate_candidate_ids populated",
+         %{user: user, capture: capture} do
+      # The query embedding will be unit_vector(0). Seed a filed card with
+      # a near-identical embedding under a *different* slug so call-number
+      # collision doesn't kick in — only the dup-detection signal does.
+      identical_vector = unit_vector(0)
+
+      existing =
+        Ash.Seed.seed!(Card, %{
+          user_id: user.id,
+          drawer: :MED,
+          date_token: "0500AD",
+          slug: "JUSTINIAN",
+          card_type: :event,
+          front: "F",
+          back: "B",
+          status: :filed,
+          embedding: identical_vector
+        })
+
+      ReqLLMStub.put_response([draft_attrs()])
+      ReqLLMStub.put_embedding(identical_vector)
+
+      assert {:ok, _catalogued} =
+               capture
+               |> Ash.Changeset.for_update(:catalog, %{})
+               |> Ash.update()
+
+      [draft] =
+        Card
+        |> Ash.Query.filter(capture_id == ^capture.id)
+        |> Ash.read!(authorize?: false)
+
+      assert existing.id in draft.duplicate_candidate_ids
+      assert draft.collision_card_id == nil
     end
 
     test "marks :failed and broadcasts on extract_drafts error", %{user: user, capture: capture} do
@@ -288,6 +334,7 @@ defmodule Manillum.Archive.CaptureTest do
     test "submit + scheduler tick produces drafts and broadcasts :cards_drafted",
          %{user: user} do
       ReqLLMStub.put_response([draft_attrs()])
+      ReqLLMStub.put_embedding(List.duplicate(0.0, 1536))
 
       Phoenix.PubSub.subscribe(Manillum.PubSub, "user:#{user.id}:cataloging")
 
