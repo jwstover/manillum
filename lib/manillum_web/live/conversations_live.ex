@@ -1,6 +1,8 @@
 defmodule ManillumWeb.ConversationsLive do
   use Elixir.ManillumWeb, :live_view
 
+  require Logger
+
   import ManillumWeb.ManillumComponents
 
   @actor_required? true
@@ -11,6 +13,7 @@ defmodule ManillumWeb.ConversationsLive do
   def render(assigns) do
     ~H"""
     <div class="conversation">
+      <ManillumWeb.Layouts.flash_group flash={@flash} />
       <.topbar active="conversations">
         <:tab id="today" href={~p"/"}>Today</:tab>
         <:tab id="conversations" href={~p"/conversations"}>Conversations</:tab>
@@ -74,14 +77,115 @@ defmodule ManillumWeb.ConversationsLive do
             opened_at={@conversation.inserted_at}
           />
 
-          <.flash kind={:info} flash={@flash} />
-          <.flash kind={:error} flash={@flash} />
-          <.toast
-            :if={Phoenix.Flash.get(@flash, :warning)}
-            kind={:warn}
-            title={Phoenix.Flash.get(@flash, :warning)}
-          />
-
+          <button
+            id="filing-selection-btn"
+            type="button"
+            class="message__file_selection"
+            phx-hook=".FilingSelection"
+            hidden
+          >
+            + FILE SELECTION
+          </button>
+          <script :type={Phoenix.LiveView.ColocatedHook} name=".FilingSelection">
+            // Floating "+ FILE SELECTION" button. Watches document
+            // selection events; when the user selects text inside the
+            // body of a complete assistant message, positions itself
+            // near the selection's bottom edge and becomes visible.
+            // Clicking it pushes a `file` event with scope=selection
+            // plus the selected text + the source message/conversation
+            // ids.
+            //
+            // The pushEvent path bypasses phx-click because phx-value-*
+            // can't be rebuilt cheaply on every selection change; the
+            // hook keeps the active state in a closure and dispatches
+            // directly when the user clicks.
+            export default {
+              mounted() {
+                this.active = null; // {text, message_id, conversation_id}
+                this.onSelect = () => {
+                  const sel = window.getSelection();
+                  if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
+                    this.hide();
+                    return;
+                  }
+                  const range = sel.getRangeAt(0);
+                  // Selection must be anchored inside the body of a
+                  // complete assistant message. Anything else (composer
+                  // text, sidebar, header chrome) is ignored.
+                  const messageBody =
+                    range.startContainer.nodeType === Node.ELEMENT_NODE
+                      ? range.startContainer.closest(".message__body")
+                      : range.startContainer.parentElement?.closest(
+                          ".message__body",
+                        );
+                  if (!messageBody) {
+                    this.hide();
+                    return;
+                  }
+                  const article = messageBody.closest("article.message");
+                  if (!article || !article.classList.contains("message--assistant")) {
+                    this.hide();
+                    return;
+                  }
+                  const text = sel.toString();
+                  if (!text || text.trim() === "") {
+                    this.hide();
+                    return;
+                  }
+                  const messageId = article.dataset.messageId;
+                  const conversationId = article.dataset.conversationId;
+                  if (!messageId || !conversationId) {
+                    this.hide();
+                    return;
+                  }
+                  this.active = {
+                    text,
+                    message_id: messageId,
+                    conversation_id: conversationId,
+                  };
+                  // Position near the selection's end. getBoundingClientRect
+                  // is the union of the selection's rects; fall back to the
+                  // last range rect for multi-line selections.
+                  const rects = range.getClientRects();
+                  const r = rects.length > 0 ? rects[rects.length - 1] : range.getBoundingClientRect();
+                  this.el.style.top = `${window.scrollY + r.bottom + 6}px`;
+                  this.el.style.left = `${window.scrollX + r.right + 6}px`;
+                  this.el.hidden = false;
+                };
+                this.onClick = (e) => {
+                  // Don't dismiss on clicking the button itself.
+                  if (this.el.contains(e.target)) return;
+                  this.hide();
+                };
+                this.onButtonClick = (e) => {
+                  e.preventDefault();
+                  if (!this.active) return;
+                  this.pushEvent("file", {
+                    scope: "selection",
+                    message_id: this.active.message_id,
+                    conversation_id: this.active.conversation_id,
+                    text: this.active.text,
+                  });
+                  // Clear the selection + button so a second click doesn't
+                  // re-fire and the user gets visual confirmation.
+                  window.getSelection()?.removeAllRanges();
+                  this.hide();
+                };
+                this.hide = () => {
+                  this.active = null;
+                  this.el.hidden = true;
+                };
+                document.addEventListener("selectionchange", this.onSelect);
+                document.addEventListener("mousedown", this.onClick);
+                this.el.addEventListener("click", this.onButtonClick);
+              },
+              destroyed() {
+                document.removeEventListener("selectionchange", this.onSelect);
+                document.removeEventListener("mousedown", this.onClick);
+                this.el.removeEventListener("click", this.onButtonClick);
+              },
+            };
+          </script>
           <div
             id="message-container"
             phx-update="stream"
@@ -178,8 +282,26 @@ defmodule ManillumWeb.ConversationsLive do
                 id={dom_id}
                 role={message_role_atom(message)}
                 timestamp={format_msg_clock(message)}
+                data-message-id={message_field(message, :id)}
+                data-conversation-id={message_field(message, :conversation_id)}
               >
                 {to_markdown(message.content || "")}
+
+                <div
+                  :if={assistant_message?(message) and message_complete?(message)}
+                  class="message__file_all"
+                >
+                  <button
+                    type="button"
+                    class="message__file_all_btn"
+                    phx-click="file"
+                    phx-value-scope="whole"
+                    phx-value-message-id={message_field(message, :id)}
+                    phx-value-conversation-id={message_field(message, :conversation_id)}
+                  >
+                    + FILE ALL
+                  </button>
+                </div>
 
                 <div :if={tool_calls(message) != []} class="message__tool_calls">
                   <span :for={tool_call <- tool_calls(message)} class="message__tool_call">
@@ -224,7 +346,13 @@ defmodule ManillumWeb.ConversationsLive do
     socket = assign_new(socket, :current_user, fn -> nil end)
 
     if socket.assigns.current_user do
-      ManillumWeb.Endpoint.subscribe("chat:conversations:#{socket.assigns.current_user.id}")
+      user_id = socket.assigns.current_user.id
+      ManillumWeb.Endpoint.subscribe("chat:conversations:#{user_id}")
+      # Cataloging broadcasts (per spec §7.3) — surface :cards_drafted /
+      # :cards_drafting_failed as toasts here. The proper filing-tray
+      # hand-off lands with Slice 10 (M-28); for now this is enough to
+      # confirm Gate D.3's end-to-end "+ FILE → Capture → drafts" loop.
+      Phoenix.PubSub.subscribe(Manillum.PubSub, "user:#{user_id}:cataloging")
     end
 
     conversations =
@@ -335,6 +463,105 @@ defmodule ManillumWeb.ConversationsLive do
     end
   end
 
+  # +FILE ALL (scope: :whole) and +FILE SELECTION (scope: :selection)
+  # both dispatch here. Resolve source_text from the scope, hand off to
+  # Manillum.Archive.submit/2, and walk away — the Capture's AshOban
+  # trigger drives the rest of the cataloging pipeline asynchronously
+  # per spec §5 Stream C / §7.3.
+  def handle_event("file", params, socket) do
+    user = socket.assigns.current_user
+
+    cond do
+      is_nil(user) ->
+        Logger.warning("[file] rejected — no current_user")
+        {:noreply, put_flash(socket, :error, "You must sign in to file")}
+
+      true ->
+        case build_capture_attrs(params, user) do
+          {:ok, attrs} ->
+            Logger.debug(
+              "[file] submitting capture user_id=#{user.id} scope=#{attrs.scope} message_id=#{attrs.message_id} text_len=#{String.length(attrs.source_text || "")}"
+            )
+
+            case Manillum.Archive.submit(attrs, actor: user) do
+              {:ok, capture} ->
+                Logger.info(
+                  "[file] capture submitted id=#{capture.id} scope=#{capture.scope} user_id=#{user.id}"
+                )
+
+                {:noreply, put_flash(socket, :info, "Filing — drafts will appear shortly")}
+
+              {:error, err} ->
+                Logger.error(
+                  "[file] Manillum.Archive.submit failed user_id=#{user.id} params=#{inspect(params)} error=#{inspect(err, pretty: true, limit: :infinity)}"
+                )
+
+                {:noreply, put_flash(socket, :error, "Couldn't start filing. Try again.")}
+            end
+
+          {:error, reason} ->
+            Logger.warning(
+              "[file] rejected — invalid params user_id=#{user.id} reason=#{reason} params=#{inspect(params)}"
+            )
+
+            {:noreply, put_flash(socket, :error, "Couldn't file: #{reason}")}
+        end
+    end
+  end
+
+  defp build_capture_attrs(%{"scope" => scope} = params, user) do
+    message_id = params["message_id"] || params["message-id"]
+    conversation_id = params["conversation_id"] || params["conversation-id"]
+
+    with true <- is_binary(message_id) || {:error, "missing message_id"},
+         true <- is_binary(conversation_id) || {:error, "missing conversation_id"},
+         {:ok, source_text} <- resolve_source(scope, message_id, params) do
+      {:ok,
+       %{
+         user_id: user.id,
+         conversation_id: conversation_id,
+         message_id: message_id,
+         scope: String.to_existing_atom(scope),
+         source_text: source_text
+       }}
+    else
+      {:error, _} = err -> err
+      false -> {:error, "missing identifiers"}
+    end
+  end
+
+  defp build_capture_attrs(_params, _user), do: {:error, "missing scope"}
+
+  defp resolve_source("whole", message_id, _params) do
+    case Manillum.Conversations.Message |> Ash.get(message_id, authorize?: false) do
+      {:ok, %{content: content}} ->
+        {:ok, content || ""}
+
+      {:error, err} ->
+        Logger.warning(
+          "[file] resolve_source(whole) — message lookup failed message_id=#{message_id} error=#{inspect(err)}"
+        )
+
+        {:error, "message not found"}
+    end
+  end
+
+  defp resolve_source("selection", _message_id, params) do
+    text = params["text"] || ""
+
+    if String.trim(text) == "" do
+      Logger.warning("[file] resolve_source(selection) — empty selection text")
+      {:error, "empty selection"}
+    else
+      {:ok, text}
+    end
+  end
+
+  defp resolve_source(scope, _message_id, _params) do
+    Logger.warning("[file] resolve_source — invalid scope=#{inspect(scope)}")
+    {:error, "invalid scope"}
+  end
+
   def handle_info(
         %Phoenix.Socket.Broadcast{
           topic: "chat:messages:" <> conversation_id,
@@ -388,6 +615,23 @@ defmodule ManillumWeb.ConversationsLive do
      socket
      |> assign(:has_conversations, true)
      |> stream_insert(:conversations, conversation)}
+  end
+
+  # Cataloging broadcasts (spec §7.3, topic "user:#{user_id}:cataloging").
+  # Slice 10 (M-28) replaces these toasts with the filing tray; for now
+  # we just confirm the Capture pipeline closed the loop end-to-end.
+  def handle_info({:cards_drafted, %{draft_ids: ids}}, socket) do
+    count = length(ids)
+    label = if count == 1, do: "1 draft card", else: "#{count} draft cards"
+    {:noreply, put_flash(socket, :info, "Cataloged #{label}")}
+  end
+
+  def handle_info({:cards_drafting_failed, %{reason: reason} = payload}, socket) do
+    Logger.error(
+      "[cataloging] failed payload=#{inspect(payload, pretty: true, limit: :infinity)}"
+    )
+
+    {:noreply, put_flash(socket, :error, "Cataloging failed: #{reason}")}
   end
 
   defp assign_message_form(socket) do
@@ -445,7 +689,7 @@ defmodule ManillumWeb.ConversationsLive do
       socket
     else
       socket
-      |> put_flash(:warning, "Some tool call data could not be displayed.")
+      |> put_flash(:warn, "Some tool call data could not be displayed.")
       |> assign(:tool_data_warning_shown?, true)
     end
   end
@@ -457,6 +701,32 @@ defmodule ManillumWeb.ConversationsLive do
   defp message_complete?(%{complete: complete}), do: complete in [true, "true"]
   defp message_complete?(%{"complete" => complete}), do: complete in [true, "true"]
   defp message_complete?(_), do: false
+
+  # Generic message-field access. The streams hold a mix of Ash structs
+  # (full atom-keyed shape) and PubSub broadcast payloads (subset, atom
+  # keys). Use this for any field on a message in the template so a
+  # missing field never crashes the LV — log + return nil instead.
+  defp message_field(message, key) when is_map(message) do
+    case Map.fetch(message, key) do
+      {:ok, value} ->
+        value
+
+      :error ->
+        case Map.fetch(message, Atom.to_string(key)) do
+          {:ok, value} ->
+            value
+
+          :error ->
+            Logger.warning(
+              "[ConversationsLive] message_field/2 missing key=#{key} in message=#{inspect(message, limit: 5)}"
+            )
+
+            nil
+        end
+    end
+  end
+
+  defp message_field(_, _), do: nil
 
   defp user_message?(message), do: message_role(message) in [:user, "user"]
   defp assistant_message?(message), do: message_role(message) in [:assistant, "assistant"]
