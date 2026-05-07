@@ -1,6 +1,7 @@
 defmodule Manillum.Conversations.Message.Changes.Respond do
   use Ash.Resource.Change
   require Ash.Query
+  require Logger
 
   alias ReqLLM.Context
 
@@ -103,6 +104,10 @@ defmodule Manillum.Conversations.Message.Changes.Respond do
             }
 
           {:error, reason}, acc ->
+            Logger.error(
+              "[Respond] streaming error from AshAi.ToolLoop conversation_id=#{message.conversation_id} message_id=#{new_message_id} reason=#{inspect(reason, pretty: true, limit: :infinity)}"
+            )
+
             %{acc | stream_error: reason}
 
           {:done, _}, acc ->
@@ -233,10 +238,19 @@ defmodule Manillum.Conversations.Message.Changes.Respond do
   defp stream_error_text(nil), do: nil
 
   defp stream_error_text(:max_iterations_reached) do
+    Logger.warning("[Respond] stream hit max_iterations_reached")
     "I hit a response limit while generating this reply. Please try again."
   end
 
-  defp stream_error_text(_reason) do
+  defp stream_error_text(reason) do
+    # Defense in depth — this branch already runs after the per-chunk
+    # error is logged above, but keep a final breadcrumb at the
+    # error-text resolution point so a grep for [Respond] turns up the
+    # whole failure chain in one place.
+    Logger.error(
+      "[Respond] generic stream_error reason=#{inspect(reason, pretty: true, limit: :infinity)}"
+    )
+
     "I hit an error while generating this response. Please try again."
   end
 end

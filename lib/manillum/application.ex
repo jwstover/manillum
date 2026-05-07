@@ -7,6 +7,11 @@ defmodule Manillum.Application do
 
   @impl true
   def start(_type, _args) do
+    # Force-load custom Postgrex types module before Repo connections start so
+    # the BEAM never tries to dispatch encode_params/2 against a not-yet-loaded
+    # module (cause of intermittent Oban producer crashes in dev).
+    Code.ensure_loaded!(Manillum.PostgrexTypes)
+
     children = [
       ManillumWeb.Telemetry,
       Manillum.Repo,

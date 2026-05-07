@@ -1,6 +1,13 @@
 import Config
 config :ash, policies: [show_policy_breakdowns?: true]
 
+# Slow Oban dispatching in dev so producers are less likely to land inside
+# the brief module-purge window when Phoenix code reloader recompiles
+# Manillum.PostgrexTypes (UndefinedFunctionError on encode_params/2).
+config :manillum, Oban,
+  stage_interval: 5_000,
+  dispatch_cooldown: 1_000
+
 # Allow `mix phx.server` to start even when LiveDebugger's port is taken by a
 # parallel worktree's dev server. Without this, the port collision crashes the
 # whole VM at boot.
