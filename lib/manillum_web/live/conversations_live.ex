@@ -232,6 +232,20 @@ defmodule ManillumWeb.ConversationsLive do
               //    lifts we re-evaluate once — if no scroll events have
               //    fired since (scrollTop landed at rest mid-lock), this
               //    catches it; otherwise normal scroll handling resumes.
+              //
+              // 3. Suppress scroll-anchoring during the transition.
+              //    Default `overflow-anchor: auto` re-pins scrollTop on
+              //    every reflow frame as the convo_header transitions
+              //    from 12rem → 0; that per-frame numerical shift fights
+              //    the user's active scroll input and shows up as a
+              //    visible stutter. We flip `overflow-anchor: none` for
+              //    the toggle-lock window so scrollTop is left alone —
+              //    column-reverse already anchors items to the visual
+              //    bottom, and the freed space at the top simply reveals
+              //    more older messages without disturbing what's on
+              //    screen. Anchoring is restored after the transition so
+              //    streaming new messages while scrolled up still keeps
+              //    the user's view stable.
               const ENTER_THRESHOLD = 120;
               const EXIT_THRESHOLD = 24;
               const TOGGLE_LOCK_MS = 260;
@@ -241,6 +255,7 @@ defmodule ManillumWeb.ConversationsLive do
                   this.root = this.el.closest(".conversation");
                   this.lockedUntil = 0;
                   this.recheckTimer = null;
+                  this.anchorRestoreTimer = null;
                   this.onScroll = () => {
                     if (!this.root) return;
                     if (performance.now() < this.lockedUntil) return;
@@ -250,6 +265,10 @@ defmodule ManillumWeb.ConversationsLive do
                       ? distance > EXIT_THRESHOLD
                       : distance > ENTER_THRESHOLD;
                     if (next !== isScrolled) {
+                      // Suppress scroll-anchoring for the transition so
+                      // the browser doesn't fight the user's scroll input
+                      // each frame as the convo_header collapses.
+                      this.el.style.overflowAnchor = "none";
                       this.root.classList.toggle("is-scrolled", next);
                       this.lockedUntil = performance.now() + TOGGLE_LOCK_MS;
                       // After the lock lifts, re-evaluate once. If the
@@ -262,6 +281,13 @@ defmodule ManillumWeb.ConversationsLive do
                       // state at the final scroll position.
                       clearTimeout(this.recheckTimer);
                       this.recheckTimer = setTimeout(this.onScroll, TOGGLE_LOCK_MS + 16);
+                      // Restore anchoring once the transition has
+                      // settled so streaming inserts (LiveView `at: 0`)
+                      // continue to keep the user's view stable.
+                      clearTimeout(this.anchorRestoreTimer);
+                      this.anchorRestoreTimer = setTimeout(() => {
+                        this.el.style.overflowAnchor = "";
+                      }, TOGGLE_LOCK_MS + 16);
                     }
                   };
                   this.el.addEventListener("scroll", this.onScroll, { passive: true });
@@ -273,6 +299,8 @@ defmodule ManillumWeb.ConversationsLive do
                 destroyed() {
                   this.el.removeEventListener("scroll", this.onScroll);
                   clearTimeout(this.recheckTimer);
+                  clearTimeout(this.anchorRestoreTimer);
+                  this.el.style.overflowAnchor = "";
                   if (this.root) this.root.classList.remove("is-scrolled");
                 },
               };
