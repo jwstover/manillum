@@ -3,7 +3,10 @@ defmodule ManillumWeb.ConversationsLiveTest do
 
   import Phoenix.LiveViewTest
 
+  alias Manillum.Archive
+  alias Manillum.Archive.Capture
   alias Manillum.Conversations.Mention
+  require Ash.Query
 
   defp make_user(email) do
     Ash.Seed.seed!(Manillum.Accounts.User, %{email: email})
@@ -141,5 +144,225 @@ defmodule ManillumWeb.ConversationsLiveTest do
       assert html =~ "Battle of Hastings"
       refute html =~ "Apollo 11"
     end
+  end
+
+  describe "+ FILE ALL affordance (rendered)" do
+    setup ctx do
+      user = make_user("file_all_render_#{System.unique_integer([:positive])}@example.com")
+      conversation = make_conversation(user)
+      conn = log_in(ctx.conn, user)
+
+      {:ok, conn: conn, user: user, conversation: conversation}
+    end
+
+    test "renders + FILE ALL on a complete assistant message", ctx do
+      _msg = make_message(ctx.conversation, :assistant, "Livy: full reply.")
+
+      {:ok, _view, html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
+
+      assert html =~ "+ FILE ALL"
+      assert html =~ "message__file_all_btn"
+    end
+
+    test "does not render + FILE ALL on user messages", ctx do
+      _msg = make_message(ctx.conversation, :user, "what was the date of cannae?")
+
+      {:ok, _view, html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
+
+      refute html =~ "+ FILE ALL"
+    end
+
+    test "does not render + FILE ALL on incomplete assistant messages", ctx do
+      _streaming =
+        Ash.Seed.seed!(Manillum.Conversations.Message, %{
+          conversation_id: ctx.conversation.id,
+          role: :assistant,
+          content: "still streaming…",
+          complete: false
+        })
+
+      {:ok, _view, html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
+
+      refute html =~ "+ FILE ALL"
+    end
+  end
+
+  describe "file event — :whole scope" do
+    setup ctx do
+      user = make_user("file_whole_#{System.unique_integer([:positive])}@example.com")
+      conversation = make_conversation(user)
+      message = make_message(conversation, :assistant, "Cannae fell on August 2, 216 BC.")
+      conn = log_in(ctx.conn, user)
+
+      {:ok, conn: conn, user: user, conversation: conversation, message: message}
+    end
+
+    test "clicking + FILE ALL submits a Capture with scope=:whole and the message body", ctx do
+      {:ok, view, _html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
+
+      html =
+        view
+        |> element("button.message__file_all_btn")
+        |> render_click()
+
+      assert html =~ "Filing — drafts will appear shortly"
+
+      [capture] = list_captures(ctx.user)
+      assert capture.scope == :whole
+      assert capture.status == :pending
+      assert capture.source_text == ctx.message.content
+      assert capture.user_id == ctx.user.id
+      assert capture.conversation_id == ctx.conversation.id
+      assert capture.message_id == ctx.message.id
+    end
+  end
+
+  describe "file event — :selection scope" do
+    setup ctx do
+      user = make_user("file_selection_#{System.unique_integer([:positive])}@example.com")
+      conversation = make_conversation(user)
+      message = make_message(conversation, :assistant, "Cannae fell on August 2, 216 BC.")
+      conn = log_in(ctx.conn, user)
+
+      {:ok, conn: conn, user: user, conversation: conversation, message: message}
+    end
+
+    test "selection push event submits a Capture with the selected text", ctx do
+      {:ok, view, _html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
+
+      html =
+        render_hook(view, "file", %{
+          "scope" => "selection",
+          "message_id" => ctx.message.id,
+          "conversation_id" => ctx.conversation.id,
+          "text" => "August 2, 216 BC"
+        })
+
+      assert html =~ "Filing — drafts will appear shortly"
+
+      [capture] = list_captures(ctx.user)
+      assert capture.scope == :selection
+      assert capture.source_text == "August 2, 216 BC"
+      assert capture.message_id == ctx.message.id
+    end
+
+    test "rejects empty selection text with a flash", ctx do
+      {:ok, view, _html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
+
+      html =
+        render_hook(view, "file", %{
+          "scope" => "selection",
+          "message_id" => ctx.message.id,
+          "conversation_id" => ctx.conversation.id,
+          "text" => "   "
+        })
+
+      assert html =~ "Couldn&#39;t file: empty selection"
+      assert list_captures(ctx.user) == []
+    end
+  end
+
+  describe "file event — guards" do
+    setup ctx do
+      user = make_user("file_guards_#{System.unique_integer([:positive])}@example.com")
+      conversation = make_conversation(user)
+      message = make_message(conversation)
+      conn = log_in(ctx.conn, user)
+
+      {:ok, conn: conn, user: user, conversation: conversation, message: message}
+    end
+
+    test "missing message_id flashes an error and persists nothing", ctx do
+      {:ok, view, _html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
+
+      html =
+        render_hook(view, "file", %{
+          "scope" => "whole",
+          "conversation_id" => ctx.conversation.id
+        })
+
+      assert html =~ "Couldn&#39;t file: missing message_id"
+      assert list_captures(ctx.user) == []
+    end
+
+    test "missing scope flashes an error", ctx do
+      {:ok, view, _html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
+
+      html =
+        render_hook(view, "file", %{
+          "message_id" => ctx.message.id,
+          "conversation_id" => ctx.conversation.id
+        })
+
+      assert html =~ "Couldn&#39;t file: missing scope"
+    end
+  end
+
+  describe "cataloging PubSub broadcasts" do
+    setup ctx do
+      user = make_user("cataloging_pubsub_#{System.unique_integer([:positive])}@example.com")
+      conversation = make_conversation(user)
+      _message = make_message(conversation)
+      conn = log_in(ctx.conn, user)
+
+      {:ok, conn: conn, user: user, conversation: conversation}
+    end
+
+    test "subscribes to user:#{"\#{id}"}:cataloging and surfaces :cards_drafted as a flash",
+         ctx do
+      {:ok, view, _html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
+
+      Phoenix.PubSub.broadcast(
+        Manillum.PubSub,
+        "user:#{ctx.user.id}:cataloging",
+        {:cards_drafted,
+         %{
+           capture_id: Ecto.UUID.generate(),
+           conversation_id: ctx.conversation.id,
+           draft_ids: ["a", "b", "c"]
+         }}
+      )
+
+      html = render(view)
+      assert html =~ "Cataloged 3 draft cards"
+    end
+
+    test "singularizes the count when one draft lands", ctx do
+      {:ok, view, _html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
+
+      Phoenix.PubSub.broadcast(
+        Manillum.PubSub,
+        "user:#{ctx.user.id}:cataloging",
+        {:cards_drafted,
+         %{
+           capture_id: Ecto.UUID.generate(),
+           conversation_id: ctx.conversation.id,
+           draft_ids: ["only"]
+         }}
+      )
+
+      html = render(view)
+      assert html =~ "Cataloged 1 draft card"
+      refute html =~ "1 draft cards"
+    end
+
+    test "surfaces :cards_drafting_failed reason as an error flash", ctx do
+      {:ok, view, _html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
+
+      Phoenix.PubSub.broadcast(
+        Manillum.PubSub,
+        "user:#{ctx.user.id}:cataloging",
+        {:cards_drafting_failed, %{capture_id: Ecto.UUID.generate(), reason: "LLM timeout"}}
+      )
+
+      html = render(view)
+      assert html =~ "Cataloging failed: LLM timeout"
+    end
+  end
+
+  defp list_captures(user) do
+    Capture
+    |> Ash.Query.filter(user_id == ^user.id)
+    |> Ash.read!(domain: Archive, authorize?: false)
   end
 end
