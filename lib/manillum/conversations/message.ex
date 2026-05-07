@@ -148,7 +148,8 @@ defmodule Manillum.Conversations.Message do
           role: message.role,
           complete: message.complete,
           tool_calls: message.tool_calls,
-          tool_results: message.tool_results
+          tool_results: message.tool_results,
+          conversation_id: message.conversation_id
         }
       end
     end
@@ -161,7 +162,8 @@ defmodule Manillum.Conversations.Message do
           role: message.role,
           complete: message.complete,
           tool_calls: message.tool_calls,
-          tool_results: message.tool_results
+          tool_results: message.tool_results,
+          conversation_id: message.conversation_id
         }
       end
     end
