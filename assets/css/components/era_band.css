@@ -165,7 +165,7 @@
    oxblood ring — the visual signature of a Mention placement. */
 .era_band__event {
   position: absolute;
-  top: 1rem;
+  top: 1.125rem;
   left: var(--event-x);
   width: 0;
   height: 0;
