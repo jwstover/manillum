@@ -662,6 +662,8 @@ defmodule ManillumWeb.ManillumComponents do
   attr :title, :string, default: nil
   attr :kicker, :string, default: nil
   attr :sub, :string, default: nil
+  attr :close_event, :string, default: nil, doc: "phx-click event for the close button"
+  attr :close_target, :any, default: nil, doc: "phx-target for the close event"
   slot :actions, doc: "buttons rendered next to the title"
   slot :inner_block, required: true
 
@@ -671,7 +673,13 @@ defmodule ManillumWeb.ManillumComponents do
       <header class="filing_tray__head">
         <div class="filing_tray__kicker">
           <span>{@kicker || "FILING TRAY"}</span>
-          <button class="filing_tray__close" type="button" aria-label="Close filing tray">
+          <button
+            class="filing_tray__close"
+            type="button"
+            aria-label="Close filing tray"
+            phx-click={@close_event}
+            phx-target={@close_target}
+          >
             <.icon name="hero-x-mark-mini" /> close
           </button>
         </div>

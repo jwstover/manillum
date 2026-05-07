@@ -365,6 +365,13 @@ defmodule ManillumWeb.ConversationsLive do
             phx_submit="send_message"
           />
         </main>
+
+        <.live_component
+          :if={@current_user}
+          module={ManillumWeb.FilingTrayComponent}
+          id="filing-tray"
+          actor={@current_user}
+        />
       </div>
     </div>
     """
@@ -642,24 +649,24 @@ defmodule ManillumWeb.ConversationsLive do
     {:noreply,
      socket
      |> assign(:has_conversations, true)
-     |> stream_insert(:conversations, conversation)}
+     |> stream_insert(:conversations, conversation, at: 0)}
   end
 
   # Cataloging broadcasts (spec §7.3, topic "user:#{user_id}:cataloging").
-  # Slice 10 (M-28) replaces these toasts with the filing tray; for now
-  # we just confirm the Capture pipeline closed the loop end-to-end.
-  def handle_info({:cards_drafted, %{draft_ids: ids}}, socket) do
-    count = length(ids)
-    label = if count == 1, do: "1 draft card", else: "#{count} draft cards"
-    {:noreply, put_flash(socket, :info, "Cataloged #{label}")}
+  # Forward to the filing tray (Slice 10A / M-28); the tray owns the
+  # rendered state from here.
+  def handle_info({:cards_drafted, _} = msg, socket) do
+    send_update(ManillumWeb.FilingTrayComponent, id: "filing-tray", action: msg)
+    {:noreply, socket}
   end
 
-  def handle_info({:cards_drafting_failed, %{reason: reason} = payload}, socket) do
+  def handle_info({:cards_drafting_failed, payload} = msg, socket) do
     Logger.error(
       "[cataloging] failed payload=#{inspect(payload, pretty: true, limit: :infinity)}"
     )
 
-    {:noreply, put_flash(socket, :error, "Cataloging failed: #{reason}")}
+    send_update(ManillumWeb.FilingTrayComponent, id: "filing-tray", action: msg)
+    {:noreply, socket}
   end
 
   defp assign_message_form(socket) do

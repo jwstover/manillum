@@ -298,9 +298,9 @@ defmodule ManillumWeb.ConversationsLiveTest do
     end
   end
 
-  describe "cataloging PubSub broadcasts" do
+  describe "filing tray (Slice 10A / M-28)" do
     setup ctx do
-      user = make_user("cataloging_pubsub_#{System.unique_integer([:positive])}@example.com")
+      user = make_user("filing_tray_#{System.unique_integer([:positive])}@example.com")
       conversation = make_conversation(user)
       _message = make_message(conversation)
       conn = log_in(ctx.conn, user)
@@ -308,45 +308,52 @@ defmodule ManillumWeb.ConversationsLiveTest do
       {:ok, conn: conn, user: user, conversation: conversation}
     end
 
-    test "subscribes to user:#{"\#{id}"}:cataloging and surfaces :cards_drafted as a flash",
-         ctx do
+    test "the tray container collapses when the user has no drafts", ctx do
       {:ok, view, _html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
+      html = render(view)
+
+      # Tray markup stays in the DOM so Phoenix LV streams keep their
+      # items across show/hide; CSS handles the collapse.
+      assert html =~ "filing_tray__container--empty"
+      refute html =~ "filing_tray__reopen"
+    end
+
+    test "loads existing drafts on mount", ctx do
+      capture = seed_capture(ctx.user, ctx.conversation)
+      _draft = seed_draft(ctx.user, capture, "ALPHA")
+      _draft = seed_draft(ctx.user, capture, "BETA")
+
+      {:ok, _view, html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
+
+      assert html =~ "FILING TRAY · 2 DRAFTS"
+      assert html =~ "ANT · 1177BC · ALPHA"
+      assert html =~ "ANT · 1177BC · BETA"
+    end
+
+    test ":cards_drafted broadcast appends new drafts", ctx do
+      {:ok, view, html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
+      assert html =~ "filing_tray__container--empty"
+
+      capture = seed_capture(ctx.user, ctx.conversation)
+      draft = seed_draft(ctx.user, capture, "GAMMA")
 
       Phoenix.PubSub.broadcast(
         Manillum.PubSub,
         "user:#{ctx.user.id}:cataloging",
         {:cards_drafted,
          %{
-           capture_id: Ecto.UUID.generate(),
+           capture_id: capture.id,
            conversation_id: ctx.conversation.id,
-           draft_ids: ["a", "b", "c"]
+           draft_ids: [draft.id]
          }}
       )
 
       html = render(view)
-      assert html =~ "Cataloged 3 draft cards"
+      assert html =~ "FILING TRAY · 1 DRAFT"
+      assert html =~ "ANT · 1177BC · GAMMA"
     end
 
-    test "singularizes the count when one draft lands", ctx do
-      {:ok, view, _html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
-
-      Phoenix.PubSub.broadcast(
-        Manillum.PubSub,
-        "user:#{ctx.user.id}:cataloging",
-        {:cards_drafted,
-         %{
-           capture_id: Ecto.UUID.generate(),
-           conversation_id: ctx.conversation.id,
-           draft_ids: ["only"]
-         }}
-      )
-
-      html = render(view)
-      assert html =~ "Cataloged 1 draft card"
-      refute html =~ "1 draft cards"
-    end
-
-    test "surfaces :cards_drafting_failed reason as an error flash", ctx do
+    test ":cards_drafting_failed broadcast surfaces a banner", ctx do
       {:ok, view, _html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
 
       Phoenix.PubSub.broadcast(
@@ -356,8 +363,104 @@ defmodule ManillumWeb.ConversationsLiveTest do
       )
 
       html = render(view)
-      assert html =~ "Cataloging failed: LLM timeout"
+      assert html =~ "Cataloging failed"
+      assert html =~ "LLM timeout"
     end
+
+    test "close hides the tray and surfaces a reopen pill; reopen brings drafts back", ctx do
+      capture = seed_capture(ctx.user, ctx.conversation)
+      _draft = seed_draft(ctx.user, capture, "EPSILON")
+
+      {:ok, view, _html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
+
+      view
+      |> element(".filing_tray__close")
+      |> render_click()
+
+      html = render(view)
+      assert html =~ "filing_tray__container--dismissed"
+      assert html =~ "Reopen filing tray"
+      assert html =~ "drafts (1)"
+
+      view
+      |> element(".filing_tray__reopen")
+      |> render_click()
+
+      html = render(view)
+      refute html =~ "filing_tray__container--dismissed"
+      assert html =~ "ANT · 1177BC · EPSILON"
+    end
+
+    test "broadcast while dismissed bumps the count without forcing the tray open", ctx do
+      capture = seed_capture(ctx.user, ctx.conversation)
+      first = seed_draft(ctx.user, capture, "ZETA")
+
+      {:ok, view, _html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
+
+      view |> element(".filing_tray__close") |> render_click()
+      assert render(view) =~ "drafts (1)"
+
+      second = seed_draft(ctx.user, capture, "ETA")
+
+      Phoenix.PubSub.broadcast(
+        Manillum.PubSub,
+        "user:#{ctx.user.id}:cataloging",
+        {:cards_drafted,
+         %{
+           capture_id: capture.id,
+           conversation_id: ctx.conversation.id,
+           draft_ids: [second.id]
+         }}
+      )
+
+      html = render(view)
+      assert html =~ "filing_tray__container--dismissed"
+      assert html =~ "drafts (2)"
+      _ = first
+    end
+
+    test "discard removes the draft from the tray and the DB", ctx do
+      capture = seed_capture(ctx.user, ctx.conversation)
+      draft = seed_draft(ctx.user, capture, "DELTA")
+
+      {:ok, view, _html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
+
+      view
+      |> element("article[id*='#{draft.id}'] button[phx-click='discard']")
+      |> render_click()
+
+      html = render(view)
+      refute html =~ "ANT · 1177BC · DELTA"
+      assert html =~ "filing_tray__container--empty"
+
+      assert {:error, %Ash.Error.Invalid{errors: [%Ash.Error.Query.NotFound{}]}} =
+               Ash.get(Manillum.Archive.Card, draft.id, authorize?: false)
+    end
+  end
+
+  defp seed_capture(user, conversation) do
+    Ash.Seed.seed!(Capture, %{
+      user_id: user.id,
+      source_text: "seed source",
+      scope: :whole,
+      status: :catalogued,
+      conversation_id: conversation.id,
+      message_id: Ecto.UUID.generate()
+    })
+  end
+
+  defp seed_draft(user, capture, slug) do
+    Ash.Seed.seed!(Manillum.Archive.Card, %{
+      user_id: user.id,
+      capture_id: capture.id,
+      drawer: :ANT,
+      date_token: "1177BC",
+      slug: slug,
+      card_type: :event,
+      front: "front for #{slug}",
+      back: "back for #{slug}",
+      status: :draft
+    })
   end
 
   defp list_captures(user) do

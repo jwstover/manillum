@@ -42,6 +42,8 @@ defmodule Manillum.Conversations.Conversation do
 
     read :my_conversations do
       filter expr(user_id == ^actor(:id))
+
+      prepare build(sort: [updated_at: :desc])
     end
   end
 
