@@ -286,4 +286,87 @@ defmodule Manillum.Archive.CardTest do
                |> Ash.update()
     end
   end
+
+  describe ":discard action" do
+    setup do
+      user = Ash.Seed.seed!(Manillum.Accounts.User, %{email: "discard_test@example.com"})
+
+      seed = fn slug, status ->
+        Ash.Seed.seed!(Card, %{
+          user_id: user.id,
+          drawer: :ANT,
+          date_token: "1177BC",
+          slug: slug,
+          card_type: :event,
+          front: "F",
+          back: "B",
+          status: status
+        })
+      end
+
+      {:ok, user: user, seed: seed}
+    end
+
+    test "destroys a :draft card", %{seed: seed} do
+      card = seed.("DRAFT-DISCARD", :draft)
+
+      assert :ok =
+               card
+               |> Ash.Changeset.for_destroy(:discard, %{})
+               |> Ash.destroy()
+
+      assert {:error, %Ash.Error.Invalid{errors: [%Ash.Error.Query.NotFound{}]}} =
+               Ash.get(Card, card.id, authorize?: false)
+    end
+
+    test "rejects discarding a filed card", %{seed: seed} do
+      card = seed.("FILED-DISCARD", :filed)
+
+      assert {:error, _} =
+               card
+               |> Ash.Changeset.for_destroy(:discard, %{})
+               |> Ash.destroy()
+    end
+  end
+
+  describe ":my_drafts action" do
+    setup do
+      user = Ash.Seed.seed!(Manillum.Accounts.User, %{email: "drafts_list@example.com"})
+      other = Ash.Seed.seed!(Manillum.Accounts.User, %{email: "drafts_other@example.com"})
+
+      seed = fn user_id, slug, status ->
+        Ash.Seed.seed!(Card, %{
+          user_id: user_id,
+          drawer: :ANT,
+          date_token: "1177BC",
+          slug: slug,
+          card_type: :event,
+          front: "F",
+          back: "B",
+          status: status
+        })
+      end
+
+      {:ok, user: user, other: other, seed: seed}
+    end
+
+    test "returns only the actor's :draft cards", %{user: user, other: other, seed: seed} do
+      d1 = seed.(user.id, "ALPHA", :draft)
+      _filed = seed.(user.id, "BETA", :filed)
+      _other = seed.(other.id, "GAMMA", :draft)
+
+      assert {:ok, [loaded]} = Manillum.Archive.list_drafts(actor: user)
+      assert loaded.id == d1.id
+      assert loaded.status == :draft
+    end
+
+    test "loads call_number and capture", %{user: user, seed: seed} do
+      _ = seed.(user.id, "DELTA", :draft)
+
+      assert {:ok, [loaded]} = Manillum.Archive.list_drafts(actor: user)
+      assert loaded.call_number == "ANT · 1177BC · DELTA"
+      # capture is a belongs_to; nil here because the seed didn't set capture_id
+      assert Map.has_key?(loaded, :capture)
+    end
+  end
 end

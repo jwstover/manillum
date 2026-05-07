@@ -63,7 +63,32 @@ defmodule Manillum.Archive.Card do
   end
 
   actions do
-    defaults [:read, :destroy]
+    defaults [:read]
+
+    read :my_drafts do
+      description """
+      Drafts visible to the current actor, newest first. Used by the
+      filing tray (Slice 10 / M-28) to render pending drafts produced by
+      the cataloging pipeline.
+      """
+
+      filter expr(user_id == ^actor(:id) and status == :draft)
+
+      prepare build(sort: [inserted_at: :desc], load: [:capture, :call_number])
+    end
+
+    destroy :discard do
+      description """
+      Discard a draft Card. The Capture row is left intact as audit trail
+      (per spec §5 Stream C — Captures persist after cataloging). Rejects
+      cards in any status other than `:draft`; filed cards are removed via
+      a future archive flow, not by discard.
+      """
+
+      validate attribute_equals(:status, :draft) do
+        message "Only :draft cards can be discarded (current: %{value})."
+      end
+    end
 
     create :draft do
       description """
