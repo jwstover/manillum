@@ -54,7 +54,6 @@ defmodule Manillum.Archive.CaptureTest do
             :user_id,
             :source_text,
             :scope,
-            :block_index,
             :selection_start,
             :selection_end,
             :status,
@@ -89,16 +88,18 @@ defmodule Manillum.Archive.CaptureTest do
       attrs = %{
         user_id: user.id,
         source_text: "Between 1200 and 1150 BCE, the Bronze Age palace economies collapsed.",
-        scope: :block,
-        block_index: 2
+        scope: :selection,
+        selection_start: 0,
+        selection_end: 71
       }
 
       assert {:ok, capture} = Archive.submit(attrs)
 
       assert capture.status == :pending
       assert capture.source_text =~ "Bronze Age"
-      assert capture.scope == :block
-      assert capture.block_index == 2
+      assert capture.scope == :selection
+      assert capture.selection_start == 0
+      assert capture.selection_end == 71
       assert capture.user_id == user.id
     end
 

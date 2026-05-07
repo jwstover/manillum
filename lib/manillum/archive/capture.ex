@@ -83,7 +83,6 @@ defmodule Manillum.Archive.Capture do
         :user_id,
         :source_text,
         :scope,
-        :block_index,
         :selection_start,
         :selection_end,
         :conversation_id,
@@ -171,19 +170,15 @@ defmodule Manillum.Archive.Capture do
     attribute :scope, :atom do
       allow_nil? false
 
-      constraints one_of: [:whole, :block, :selection]
+      constraints one_of: [:whole, :selection]
       public? true
 
       description """
       Which save modality produced this capture: `:whole` (full assistant
-      message), `:block` (a single addressable block within a message),
-      `:selection` (a user-highlighted text range).
+      message) or `:selection` (a user-highlighted text range).
       """
     end
 
-    # Block-scope and selection-scope offsets per spec §4. All nullable
-    # because they only apply to a specific scope.
-    attribute :block_index, :integer, public?: true
     attribute :selection_start, :integer, public?: true
     attribute :selection_end, :integer, public?: true
 

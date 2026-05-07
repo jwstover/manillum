@@ -177,12 +177,6 @@ defmodule Manillum.Conversations.Message do
       allow_nil? false
     end
 
-    attribute :blocks, {:array, :map} do
-      public? true
-      default []
-      allow_nil? false
-    end
-
     attribute :tool_calls, {:array, :map}
     attribute :tool_results, {:array, :map}
 
