@@ -55,7 +55,7 @@ defmodule ManillumWeb.ComponentsPreviewLive do
       <.topbar
         active="components"
         tagline="— design system preview"
-        meta="GATE H.1 · 14 COMPONENTS"
+        meta="GATE H.1 · 15 COMPONENTS"
       >
         <:tab id="today" href={~p"/"}>Today</:tab>
         <:tab id="components" href="/dev/components">Components</:tab>
@@ -416,9 +416,8 @@ defmodule ManillumWeb.ComponentsPreviewLive do
           <h4 class="cpv__h4">Draft variant — used inside the filing tray</h4>
           <div class="cpv__cards-grid">
             <.card face={:draft}>
-              <div style="display:flex;justify-content:space-between;margin-bottom:5px">
+              <div class="filing_tray__draft-head">
                 <.call_number inline>ANT · 1175BC · CLINE-FRAME</.call_number>
-                <.meta_label>QRY 89 · ¶2</.meta_label>
               </div>
               <.drawer_label>Dr. 01 · Antiquity</.drawer_label>
               <div style="font-family:var(--font-display);font-size:.8125rem;font-weight:500;margin:5px 0;line-height:1.25">
@@ -472,37 +471,39 @@ defmodule ManillumWeb.ComponentsPreviewLive do
         <.cpv_section
           id="filing_tray"
           title="Filing tray"
-          sub="Slides in from the right while cataloging is running. Two states."
+          sub="Persistent right-column rail. No panel chrome — the column ground shows through. Three states."
         >
           <div class="cpv__trays">
             <div class="cpv__tray-frame">
-              <h4 class="cpv__h4">Drafting state</h4>
-              <.filing_tray
-                state={:draft}
-                kicker="FILING TRAY"
-                title="Drafting cards from QRY № 0089 · ¶2"
-                sub="cataloging in the background…"
-              >
-                <.draft_skeleton prov="QRY 89 · ¶2" />
-                <.draft_skeleton prov="QRY 89 · ¶2" />
-                <div style="font-family:var(--font-body);font-size:.71875rem;font-style:italic;color:var(--color-ink-faint);text-align:center;padding:.375rem;line-height:1.5">
-                  you can keep chatting — tray will surface when ready
-                </div>
+              <h4 class="cpv__h4">Empty state — invite</h4>
+              <.filing_tray state={:empty}>
+                <p style="font-family:var(--font-body);font-style:italic;font-size:.78125rem;color:var(--color-ink-faint);line-height:1.5;margin:0">
+                  Anything you file from the conversation will land here.
+                </p>
               </.filing_tray>
             </div>
 
             <div class="cpv__tray-frame">
-              <h4 class="cpv__h4">Review state</h4>
+              <h4 class="cpv__h4">Drafting state — cataloging in flight</h4>
+              <.filing_tray
+                state={:drafting}
+                sub="Cataloging in the background — keep chatting if you like."
+              >
+                <.cataloging_indicator sub="2 captures in flight" />
+              </.filing_tray>
+            </div>
+
+            <div class="cpv__tray-frame">
+              <h4 class="cpv__h4">Review state — drafts ready</h4>
               <.filing_tray
                 state={:review}
                 kicker="FILING TRAY · 3 DRAFTS"
-                title="From QRY № 0089 · file all"
+                sub="Drafts from QRY № 0089. Trust Livy and file all, or review each."
               >
                 <:actions>
                   <.action_pill>
                     <.icon name="hero-archive-box-micro" /> file all
                   </.action_pill>
-                  <.action_pill variant={:ghost}>review each</.action_pill>
                   <span style="flex:1"></span>
                   <.action_pill variant={:bare}>discard all</.action_pill>
                 </:actions>
@@ -517,19 +518,47 @@ defmodule ManillumWeb.ComponentsPreviewLive do
                       <.action_pill variant={:bare}>discard</.action_pill>
                     </div>
                   </div>
-                  <div style="display:flex;justify-content:space-between;margin-bottom:5px">
+                  <div class="filing_tray__draft-head">
                     <.call_number inline>ANT · 1175BC · SYSTEMS</.call_number>
-                    <.meta_label>FROM QRY № 0089 · ¶1</.meta_label>
                   </div>
-                  <.drawer_label>
-                    Dr. 01 · Antiquity
-                  </.drawer_label>
-                  <div style="font-family:var(--font-display);font-size:.875rem;font-weight:500;margin:5px 0;line-height:1.25">
+                  <.drawer_label>Dr. 01 · Antiquity</.drawer_label>
+                  <div class="filing_tray__draft-front">
                     What does it mean to call the Bronze Age collapse a "systems collapse"?
+                  </div>
+                  <div class="filing_tray__draft-back">
+                    Between 1200 and 1150 BCE nearly every major palace economy in the eastern Mediterranean fell within fifty years.
                   </div>
                 </.card>
               </.filing_tray>
             </div>
+          </div>
+
+          <h4 class="cpv__h4">Dismissed spine — collapsed handle</h4>
+          <p class="cpv__sub">
+            When the user closes the tray, the rail collapses to a 22px-wide
+            full-height spine on the right edge of the conversation. A 1px
+            oxblood rule + one rotated mono line — the whole spine is
+            clickable to re-open.
+          </p>
+          <div style="height:14rem;display:flex;align-items:stretch;background:var(--color-linen);border:1px dotted var(--color-rule);max-width:30rem">
+            <div style="flex:1;padding:1rem;font-family:var(--font-body);font-style:italic;font-size:.8125rem;color:var(--color-ink-faint)">
+              conversation column…
+            </div>
+            <button type="button" class="filing_tray__spine" aria-label="Reopen filing tray">
+              <span class="filing_tray__spine-rule" aria-hidden="true"></span>
+              <span class="filing_tray__spine-label">★ Filing tray · 3 · show ›</span>
+            </button>
+          </div>
+
+          <h4 class="cpv__h4">cataloging_indicator — standalone</h4>
+          <p class="cpv__sub">
+            Brass mono "Cataloging…" with the same three-dot pulse as
+            the composing indicator. The filing tray's drafting state
+            uses this; it can also stand alone anywhere else a long-
+            running background job needs to surface progress.
+          </p>
+          <div style="padding:1rem 1.25rem;background:var(--color-paper);border-left:2px solid var(--color-rule-strong);max-width:24rem">
+            <.cataloging_indicator sub="2 captures in flight" />
           </div>
         </.cpv_section>
 
@@ -686,7 +715,8 @@ defmodule ManillumWeb.ComponentsPreviewLive do
             <li>Stamp: square, ~8° tilt, oxblood-soft (faded)</li>
             <li>Gutter: hover shows + FILE; active state oxblood rule</li>
             <li>Era band: pin lands at correct era for −1177, 1519, 1914</li>
-            <li>Tray: drafting (slim) and review (wide) variants</li>
+            <li>Tray: empty / drafting / review — no panel chrome on the rail itself</li>
+            <li>Cataloging indicator: brass mono, three pulsing oxblood dots</li>
             <li>Toasts: 4 kinds, not DaisyUI</li>
             <li>Buttons: italic, no radius, three weights</li>
           </ul>
@@ -861,13 +891,21 @@ defmodule ManillumWeb.ComponentsPreviewLive do
       }
       .cpv__trays {
         display: grid;
-        grid-template-columns: 17rem 26rem;
-        gap: 2rem;
+        grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+        gap: 1.5rem;
         align-items: flex-start;
       }
+      /* The rail itself is chrome-free in production; the preview frame
+       * uses a dotted outline + linen ground so the reader can see the
+       * rail's bounds without faking a panel that the component doesn't
+       * render. */
       .cpv__tray-frame {
-        background: var(--color-paper);
-        border: 1px solid var(--color-rule);
+        background: var(--color-linen);
+        border: 1px dotted var(--color-rule);
+        padding: 0;
+      }
+      .cpv__tray-frame .cpv__h4 {
+        margin: .75rem 1rem .25rem;
       }
       .cpv__toasts {
         display: grid;

@@ -524,6 +524,11 @@ defmodule ManillumWeb.ConversationsLive do
                   "[file] capture submitted id=#{capture.id} scope=#{capture.scope} user_id=#{user.id}"
                 )
 
+                send_update(ManillumWeb.FilingTrayComponent,
+                  id: "filing-tray",
+                  action: {:capture_submitted, %{capture_id: capture.id}}
+                )
+
                 {:noreply, put_flash(socket, :info, "Filing — drafts will appear shortly")}
 
               {:error, err} ->

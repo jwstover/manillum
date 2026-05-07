@@ -25,7 +25,8 @@ defmodule ManillumWeb.ManillumComponents do
     * `btn/1` — Manillum-style button (italic, no radius)
     * `action_pill/1` — tiny inline action
     * `toast/1` — flash / notification (NOT DaisyUI's toast)
-    * `filing_tray/1` — right-side drawer
+    * `filing_tray/1` — right-column rail (chrome-free)
+    * `cataloging_indicator/1` — brass mono "Cataloging…" with pulsing dots
     * `convo_header/1` — kicker + display title + opened stamp
     * `message/1` — speaker gutter + body for a chat turn
     * `composing_indicator/1` — three-dot streaming pulse
@@ -656,15 +657,21 @@ defmodule ManillumWeb.ManillumComponents do
   end
 
   # ────────────────────────────────────────────────────────────────────
-  # filing_tray — slide-in drawer for cataloging drafts
+  # filing_tray — chrome-free rail in the right column of a conversation.
+  # Three states drive the body: :empty (waiting), :drafting (cataloging
+  # in flight), :review (drafts ready to act on). The rail itself has
+  # no background and no hard border — it's a labeled region the parent
+  # column ground shows through.
   # ────────────────────────────────────────────────────────────────────
-  attr :state, :atom, values: [:draft, :review], default: :draft
-  attr :title, :string, default: nil
-  attr :kicker, :string, default: nil
-  attr :sub, :string, default: nil
+  attr :state, :atom, values: [:empty, :drafting, :review], default: :empty
+  attr :kicker, :string, default: nil, doc: "mono label, defaults to FILING TRAY"
+  attr :sub, :string, default: nil, doc: "italic context line under the kicker"
   attr :close_event, :string, default: nil, doc: "phx-click event for the close button"
   attr :close_target, :any, default: nil, doc: "phx-target for the close event"
-  slot :actions, doc: "buttons rendered next to the title"
+
+  slot :actions,
+    doc: "pill row rendered between the sub line and the body — typically file all / discard all"
+
   slot :inner_block, required: true
 
   def filing_tray(assigns) do
@@ -672,18 +679,18 @@ defmodule ManillumWeb.ManillumComponents do
     <aside class={["filing_tray", "filing_tray--#{@state}"]}>
       <header class="filing_tray__head">
         <div class="filing_tray__kicker">
-          <span>{@kicker || "FILING TRAY"}</span>
+          <span>★ {@kicker || "FILING TRAY"}</span>
           <button
+            :if={@close_event}
             class="filing_tray__close"
             type="button"
             aria-label="Close filing tray"
             phx-click={@close_event}
             phx-target={@close_target}
           >
-            <.icon name="hero-x-mark-mini" /> close
+            hide <.icon name="hero-x-mark-mini" />
           </button>
         </div>
-        <div :if={@title} class="filing_tray__title">{@title}</div>
         <div :if={@sub} class="filing_tray__sub">{@sub}</div>
         <div :if={@actions != []} class="filing_tray__actions">
           {render_slot(@actions)}
@@ -694,19 +701,25 @@ defmodule ManillumWeb.ManillumComponents do
     """
   end
 
-  attr :prov, :string, default: nil
+  # ────────────────────────────────────────────────────────────────────
+  # cataloging_indicator — three pulsing oxblood dots + brass mono
+  # "Cataloging…" with an optional faint italic sub-line. Used by the
+  # filing tray's :drafting state and any other surface that needs to
+  # report a background cataloging job.
+  # ────────────────────────────────────────────────────────────────────
+  attr :label, :string, default: "Cataloging…"
+  attr :sub, :string, default: nil
 
-  def draft_skeleton(assigns) do
+  def cataloging_indicator(assigns) do
     ~H"""
-    <div class="card card--draft">
-      <div :if={@prov} class="meta_label" style="display:block;text-align:right;margin-bottom:.5rem">
-        {@prov}
-      </div>
-      <div class="skeleton_bar" style="width:6.875rem;margin-bottom:.5rem"></div>
-      <div class="skeleton_bar skeleton_bar--80"></div>
-      <div class="skeleton_bar skeleton_bar--95"></div>
-      <div class="skeleton_bar skeleton_bar--60"></div>
-      <div class="cataloging_indicator">cataloging…</div>
+    <div class="cataloging_indicator" aria-live="polite">
+      <span class="cataloging_indicator__head">
+        <span class="composing__dots" aria-hidden="true">
+          <i></i><i></i><i></i>
+        </span>
+        <span class="cataloging_indicator__label">{@label}</span>
+      </span>
+      <span :if={@sub} class="cataloging_indicator__sub">{@sub}</span>
     </div>
     """
   end

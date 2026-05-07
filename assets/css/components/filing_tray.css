@@ -1,40 +1,58 @@
 /* ─────────────────────────────────────────────────────────────────────────
-   .filing_tray — the right-side drawer that slides in while cataloging is
-   running. Two states:
-     • drafting (slim, ~240px wide, paper-deep ground, skeleton cards)
-     • review  (expanded ~380px, oxblood "FILE ALL" header, draft cards)
+   .filing_tray — chrome-free rail in the right column of a conversation.
+   No background, no border-left: just a labeled region the parent column
+   ground shows through. The rail is persistent and the body adapts to
+   one of three states: :empty, :drafting, :review.
 
-   The tray is anchored to the right edge of the page; its left edge has a
-   subtle inset shadow to suggest it sits "on top" of the page.
+   Markup pattern (parent owns the column width via `.filing_tray__container`
+   in conversation.css):
+
+     <aside class="filing_tray filing_tray--review">
+       <header class="filing_tray__head">
+         <div class="filing_tray__kicker">★ FILING TRAY · 3 <button class="filing_tray__close">hide ×</button></div>
+         <div class="filing_tray__sub">Drafts from QRY № 0089. …</div>
+         <div class="filing_tray__actions">…</div>
+       </header>
+       <div class="filing_tray__body">…</div>
+     </aside>
    ───────────────────────────────────────────────────────────────────── */
 
 .filing_tray {
-  background: var(--color-paper-deep);
-  border-left: 1px solid var(--color-rule-strong);
   display: flex;
   flex-direction: column;
   height: 100%;
+  padding: 1rem 1rem 1rem 0.75rem;
+  background: transparent;
+  border: 0;
+  overflow: hidden;
+  /* Width + opacity animate together when --dismissed flips. The padding
+   * collapses too so the rail's content tracks the rail edge as it slides
+   * out — without it, the inner padding holds visible space until the
+   * very end of the transition. */
+  transition:
+    width 260ms ease,
+    opacity 200ms ease,
+    padding 260ms ease;
+}
+
+.filing_tray--empty,
+.filing_tray--drafting {
+  width: 20rem;
 }
 
 .filing_tray--review {
-  width: 24rem;
-}
-
-.filing_tray--draft {
-  width: 15rem;
+  width: 23rem;
 }
 
 .filing_tray__head {
-  padding: 1rem 1.25rem 0.75rem;
-  border-bottom: 1px solid var(--color-rule);
-  background: var(--color-paper);
+  margin-bottom: 0.625rem;
 }
 
 .filing_tray__kicker {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  margin-bottom: 0.25rem;
+  margin-bottom: 0.375rem;
   font-family: var(--font-mono);
   font-size: var(--text-mono-xs);
   letter-spacing: var(--tracking-mono-extra);
@@ -42,10 +60,10 @@
   text-transform: uppercase;
 }
 
-.filing_tray__kicker .filing_tray__close {
+.filing_tray__close {
   color: var(--color-ink-faint);
   letter-spacing: var(--tracking-mono);
-  text-transform: none;
+  text-transform: uppercase;
   background: transparent;
   border: 0;
   font-family: inherit;
@@ -66,48 +84,28 @@
   height: 0.75rem;
 }
 
-.filing_tray__title {
-  font-family: var(--font-display);
-  font-size: 1.0625rem;
-  font-weight: 500;
-  line-height: 1.2;
-  color: var(--color-ink);
-  margin-top: 0.125rem;
-}
-
 .filing_tray__sub {
   font-family: var(--font-body);
   font-style: italic;
-  font-size: 0.71875rem;
-  color: var(--color-ink-faint);
-  margin-top: 0.125rem;
-  line-height: 1.45;
+  font-size: 0.78125rem;
+  color: var(--color-ink-soft);
+  line-height: 1.5;
+  margin-bottom: 0.875rem;
 }
 
 .filing_tray__actions {
   display: flex;
   gap: 0.375rem;
-  margin-top: 0.5rem;
+  margin-top: 0.25rem;
+  margin-bottom: 0.875rem;
   align-items: center;
 }
 
 .filing_tray__body {
   flex: 1;
-  padding: 0.875rem;
+  min-height: 0;
   overflow-y: auto;
 }
-
-/* Skeleton draft block — uses .card--draft, but the loading bars live here
-   because they're skeleton-specific, not card-specific. */
-.skeleton_bar {
-  height: 0.4375rem;
-  background: var(--color-rule-faint);
-  margin-bottom: 0.3125rem;
-}
-
-.skeleton_bar--80 { width: 80%; }
-.skeleton_bar--95 { width: 95%; }
-.skeleton_bar--60 { width: 60%; }
 
 /* Container in the conversation grid. Always rendered (so Phoenix
    LV streams stay mounted and don't lose items on dismiss/reopen);
@@ -118,47 +116,94 @@
   height: 100%;
 }
 
-/* No drafts and no failure → collapse to zero width. */
+/* No drafts, no failure, nothing in flight → collapse to zero width. */
 .filing_tray__container--empty {
   display: none;
 }
 
-/* Dismissed: hide the tray, show only the reopen pill. */
+/* Dismissed: width-collapse the tray (animated) so the rail slides out
+   to the right edge while the spine slides in from it. `display: none`
+   would skip the transition entirely. */
 .filing_tray__container--dismissed .filing_tray {
-  display: none;
+  width: 0;
+  opacity: 0;
+  padding-left: 0;
+  padding-right: 0;
+  pointer-events: none;
 }
 
-/* Reopen pill — shown on the right edge of the main column when the tray
-   has been dismissed and drafts are still pending. Vertical, anchored to
-   the right edge of the column it belongs to. */
-.filing_tray__reopen {
-  align-self: center;
-  background: var(--color-paper);
-  border: 1px solid var(--color-rule-strong);
-  border-right: 0;
-  border-radius: 4px 0 0 4px;
-  padding: 0.625rem 0.5rem;
+/* Dismissed-state spine — full-height 22px-wide column flush to the right
+   edge of the conversation. A single 1px oxblood-tinted rule on its left
+   edge separates it from the chat; one centered line of vertical rotated
+   mono text reads `★ Filing tray · N · show ›`. The whole spine is
+   clickable. No background, no button chrome — matches the no-chrome
+   direction of the open rail.
+
+   The spine is always rendered when the tray has anything to surface;
+   CSS hides it (width 0, opacity 0) until the container picks up the
+   --dismissed modifier. Width + opacity transition match the tray's
+   own transition so the two trade places smoothly. */
+.filing_tray__spine {
+  position: relative;
+  width: 0;
+  height: 100%;
+  opacity: 0;
+  overflow: hidden;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  pointer-events: none;
+  transition:
+    width 260ms ease,
+    opacity 200ms ease;
+}
+
+.filing_tray__container--dismissed .filing_tray__spine {
+  width: 1.375rem;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.filing_tray__spine-rule {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 1px;
+  background: rgba(94, 26, 26, 0.35);
+}
+
+.filing_tray__spine-label {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  /* Read bottom-up: writing-mode rotates the glyphs, the 180° rotate flips
+   * the line direction so it reads from bottom (★) to top (›). */
+  transform: translate(-50%, -50%) rotate(180deg);
+  writing-mode: vertical-rl;
+  white-space: nowrap;
   font-family: var(--font-mono);
   font-size: var(--text-mono-xs);
-  letter-spacing: var(--tracking-mono-extra);
-  color: var(--color-oxblood);
+  letter-spacing: 0.28em;
   text-transform: uppercase;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  white-space: nowrap;
+  color: var(--color-oxblood);
 }
 
-.filing_tray__reopen:hover {
-  background: var(--color-paper-deep);
+.filing_tray__spine:hover .filing_tray__spine-rule {
+  background: var(--color-oxblood);
 }
 
-.filing_tray__reopen [class^="hero-"] {
-  width: 0.75rem;
-  height: 0.75rem;
+.filing_tray__spine:hover .filing_tray__spine-label {
+  color: var(--color-ink);
 }
 
+/* Draft cards in the rail keep their own .card--draft chrome (oxblood
+   top-rule, paper-light ground); the rail is the only thing that lost
+   its panel. Spacing between drafts. */
 .filing_tray__draft + .filing_tray__draft {
   margin-top: 0.625rem;
 }
@@ -217,16 +262,34 @@
   color: var(--color-ink-faint);
 }
 
-@keyframes manillum_pulse {
-  0%, 100% { opacity: 0.6; }
-  50%      { opacity: 1; }
-}
+/* ── cataloging_indicator ────────────────────────────────────────────
+   Brass mono "Cataloging…" with the same three-dot pulse as the
+   composing indicator. Used by the filing tray's :drafting state. */
 
 .cataloging_indicator {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.cataloging_indicator__head {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.cataloging_indicator__label {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-xs);
+  letter-spacing: var(--tracking-mono-extra);
+  color: var(--color-brass);
+  text-transform: uppercase;
+}
+
+.cataloging_indicator__sub {
   font-family: var(--font-body);
   font-style: italic;
-  font-size: 0.6875rem;
-  color: var(--color-brass);
-  margin-top: 0.25rem;
-  animation: manillum_pulse 1.5s ease-in-out infinite;
+  font-size: 0.75rem;
+  color: var(--color-ink-faint);
+  line-height: 1.5;
 }

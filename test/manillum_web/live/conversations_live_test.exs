@@ -362,12 +362,18 @@ defmodule ManillumWeb.ConversationsLiveTest do
         {:cards_drafting_failed, %{capture_id: Ecto.UUID.generate(), reason: "LLM timeout"}}
       )
 
+      # Force a sync barrier so the broadcast → handle_info →
+      # send_update → component re-render chain settles before
+      # render(view) snapshots the HTML. Without this, the queued
+      # send_update message can land behind render(view)'s GenServer
+      # call and the assertion sees the pre-broadcast state.
+      _ = :sys.get_state(view.pid)
       html = render(view)
       assert html =~ "Cataloging failed"
       assert html =~ "LLM timeout"
     end
 
-    test "close hides the tray and surfaces a reopen pill; reopen brings drafts back", ctx do
+    test "close hides the tray and surfaces a spine; reopen brings drafts back", ctx do
       capture = seed_capture(ctx.user, ctx.conversation)
       _draft = seed_draft(ctx.user, capture, "EPSILON")
 
@@ -380,10 +386,10 @@ defmodule ManillumWeb.ConversationsLiveTest do
       html = render(view)
       assert html =~ "filing_tray__container--dismissed"
       assert html =~ "Reopen filing tray"
-      assert html =~ "drafts (1)"
+      assert html =~ "Filing tray · 1 · show"
 
       view
-      |> element(".filing_tray__reopen")
+      |> element(".filing_tray__spine")
       |> render_click()
 
       html = render(view)
@@ -398,7 +404,7 @@ defmodule ManillumWeb.ConversationsLiveTest do
       {:ok, view, _html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
 
       view |> element(".filing_tray__close") |> render_click()
-      assert render(view) =~ "drafts (1)"
+      assert render(view) =~ "Filing tray · 1 · show"
 
       second = seed_draft(ctx.user, capture, "ETA")
 
@@ -413,9 +419,10 @@ defmodule ManillumWeb.ConversationsLiveTest do
          }}
       )
 
+      _ = :sys.get_state(view.pid)
       html = render(view)
       assert html =~ "filing_tray__container--dismissed"
-      assert html =~ "drafts (2)"
+      assert html =~ "Filing tray · 2 · show"
       _ = first
     end
 
