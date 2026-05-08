@@ -585,6 +585,78 @@ defmodule ManillumWeb.ConversationsLiveTest do
     end
   end
 
+  describe "provenance label — Slice 10B / M-66" do
+    setup ctx do
+      user = make_user("provenance_#{System.unique_integer([:positive])}@example.com")
+      conversation = make_conversation(user, 89)
+
+      message =
+        make_message(conversation, :assistant, "para one\n\npara two has the bit\n\npara three")
+
+      conn = log_in(ctx.conn, user)
+
+      {:ok, conn: conn, user: user, conversation: conversation, message: message}
+    end
+
+    test ":whole scope renders QRY № only", ctx do
+      capture =
+        Ash.Seed.seed!(Capture, %{
+          user_id: ctx.user.id,
+          source_text: ctx.message.content,
+          scope: :whole,
+          status: :catalogued,
+          conversation_id: ctx.conversation.id,
+          message_id: ctx.message.id
+        })
+
+      _draft = seed_draft(ctx.user, capture, "WHOLE-PROV")
+
+      {:ok, _view, html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
+
+      assert html =~ "QRY № 0089"
+      refute html =~ "¶"
+    end
+
+    test ":selection scope renders QRY № N · ¶ M with the right paragraph index", ctx do
+      capture =
+        Ash.Seed.seed!(Capture, %{
+          user_id: ctx.user.id,
+          source_text: "para two has the bit",
+          scope: :selection,
+          status: :catalogued,
+          conversation_id: ctx.conversation.id,
+          message_id: ctx.message.id
+        })
+
+      _draft = seed_draft(ctx.user, capture, "SEL-PROV")
+
+      {:ok, _view, html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
+
+      assert html =~ "QRY № 0089 · ¶ 2"
+    end
+
+    test "draft from a deleted conversation falls back gracefully", ctx do
+      capture =
+        Ash.Seed.seed!(Capture, %{
+          user_id: ctx.user.id,
+          source_text: "x",
+          scope: :whole,
+          status: :catalogued,
+          conversation_id: Ecto.UUID.generate(),
+          message_id: Ecto.UUID.generate()
+        })
+
+      _draft = seed_draft(ctx.user, capture, "ORPHAN-PROV")
+
+      {:ok, _view, html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
+
+      # No provenance line rendered (conversation can't be loaded)
+      refute html =~ "filing_tray__draft-provenance"
+      # Draft itself still rendered
+      assert html =~ "ANT · 1177BC · ORPHAN-PROV"
+    end
+  end
+
   describe "slug-collision banner — Slice 10B / M-64" do
     setup ctx do
       user = make_user("collision_#{System.unique_integer([:positive])}@example.com")

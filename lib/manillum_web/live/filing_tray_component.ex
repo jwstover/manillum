@@ -126,7 +126,14 @@ defmodule ManillumWeb.FilingTrayComponent do
     actor = socket.assigns.actor
 
     with {:ok, card} <-
-           Ash.get(Card, id, actor: actor, load: [:call_number, collision_card: [:call_number]]),
+           Ash.get(Card, id,
+             actor: actor,
+             load: [
+               :call_number,
+               capture: [:conversation, :message],
+               collision_card: [:call_number]
+             ]
+           ),
          {:ok, filed} <- Archive.file_card(card, actor: actor) do
       send(
         self(),
@@ -206,7 +213,14 @@ defmodule ManillumWeb.FilingTrayComponent do
     actor = socket.assigns.actor
 
     with {:ok, card} <-
-           Ash.get(Card, id, actor: actor, load: [:call_number, collision_card: [:call_number]]) do
+           Ash.get(Card, id,
+             actor: actor,
+             load: [
+               :call_number,
+               capture: [:conversation, :message],
+               collision_card: [:call_number]
+             ]
+           ) do
       form = build_edit_form(card)
 
       {:noreply,
@@ -222,7 +236,14 @@ defmodule ManillumWeb.FilingTrayComponent do
     actor = socket.assigns.actor
 
     with {:ok, card} <-
-           Ash.get(Card, id, actor: actor, load: [:call_number, collision_card: [:call_number]]) do
+           Ash.get(Card, id,
+             actor: actor,
+             load: [
+               :call_number,
+               capture: [:conversation, :message],
+               collision_card: [:call_number]
+             ]
+           ) do
       {:noreply,
        socket
        |> assign(:editing, Map.delete(socket.assigns.editing, id))
@@ -259,7 +280,11 @@ defmodule ManillumWeb.FilingTrayComponent do
       if collision_changed?(prev_collision, next_collision) do
         case Ash.get(Card, id,
                actor: socket.assigns.actor,
-               load: [:call_number, collision_card: [:call_number]]
+               load: [
+                 :call_number,
+                 capture: [:conversation, :message],
+                 collision_card: [:call_number]
+               ]
              ) do
           {:ok, card} -> stream_insert(socket, :drafts, card)
           _ -> socket
@@ -275,11 +300,22 @@ defmodule ManillumWeb.FilingTrayComponent do
     actor = socket.assigns.actor
 
     with {:ok, card} <-
-           Ash.get(Card, id, actor: actor, load: [:call_number, collision_card: [:call_number]]),
+           Ash.get(Card, id,
+             actor: actor,
+             load: [
+               :call_number,
+               capture: [:conversation, :message],
+               collision_card: [:call_number]
+             ]
+           ),
          {:ok, card} <- maybe_rename(card, params, actor),
          {:ok, card} <- maybe_edit_content(card, params, actor) do
       card =
-        Ash.load!(card, [:call_number, :capture, collision_card: [:call_number]], actor: actor)
+        Ash.load!(
+          card,
+          [:call_number, capture: [:conversation, :message], collision_card: [:call_number]],
+          actor: actor
+        )
 
       {:noreply,
        socket
@@ -656,6 +692,10 @@ defmodule ManillumWeb.FilingTrayComponent do
       </div>
       <.drawer_label>{drawer_name(@draft.drawer)}</.drawer_label>
 
+      <div :if={provenance_label(@draft)} class="filing_tray__draft-provenance">
+        {provenance_label(@draft)}
+      </div>
+
       <div :if={collision_card(@draft)} class="filing_tray__draft-collision">
         <div class="filing_tray__draft-collision-body">
           <.icon name="hero-exclamation-triangle-micro" />
@@ -724,6 +764,53 @@ defmodule ManillumWeb.FilingTrayComponent do
   # explicitly loaded (older code paths) by treating it as `nil`.
   defp collision_card(%{collision_card: %Card{} = c}), do: c
   defp collision_card(_), do: nil
+
+  # Returns the QRY № N · ¶ M provenance line for a draft, or nil if
+  # the draft has no associated capture / conversation. `:whole` scope
+  # renders just `QRY № N`; `:selection` scope adds `· ¶ M` computed
+  # from the selection's position in the source message content.
+  # `:block` (legacy enum value, no longer produced) treated like
+  # `:whole`.
+  defp provenance_label(%{capture: %{conversation: %{query_number: q}, scope: scope} = capture})
+       when is_integer(q) do
+    base = "QRY № #{pad_qry(q)}"
+
+    case paragraph_index(capture, scope) do
+      nil -> base
+      idx -> "#{base} · ¶ #{idx}"
+    end
+  end
+
+  defp provenance_label(_), do: nil
+
+  defp paragraph_index(%{scope: :selection, source_text: src, message: %{content: content}}, _)
+       when is_binary(src) and is_binary(content) and src != "" do
+    paragraphs = paragraph_split(content)
+    src_first_line = src |> String.split("\n", parts: 2) |> hd() |> String.trim()
+
+    if src_first_line == "" do
+      nil
+    else
+      paragraphs
+      |> Enum.find_index(&(String.trim(&1) =~ src_first_line))
+      |> case do
+        nil -> nil
+        idx -> idx + 1
+      end
+    end
+  end
+
+  defp paragraph_index(_, _), do: nil
+
+  defp paragraph_split(content) do
+    String.split(content, ~r/\n\s*\n/, trim: true)
+  end
+
+  defp pad_qry(n) when is_integer(n) and n >= 0 do
+    n |> Integer.to_string() |> String.pad_leading(4, "0")
+  end
+
+  defp pad_qry(_), do: "----"
 
   # Click handler for the file pill. Adds the `--filing` class to the
   # parent article (which kicks off the FILED-stamp impression + slide-out

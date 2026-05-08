@@ -617,7 +617,12 @@ defmodule ManillumWeb.ConversationsLive do
          {:ok, drafted} <- Manillum.Archive.unfile_card(card, actor: user) do
       # Reload to get the freshly-loaded :call_number calc on the
       # demoted card before handing it to the tray.
-      {:ok, Ash.load!(drafted, [:capture, :call_number], actor: user)}
+      {:ok,
+       Ash.load!(
+         drafted,
+         [:call_number, capture: [:conversation, :message]],
+         actor: user
+       )}
     end
   end
 

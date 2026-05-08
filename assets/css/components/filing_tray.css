@@ -221,6 +221,21 @@
   margin-top: 0.625rem;
 }
 
+/* Provenance line under the call_number on each draft — `QRY № 0089`
+ * for whole-message captures, `QRY № 0089 · ¶ 3` for selection
+ * captures (paragraph index resolved at render time from the source
+ * text's position in the message). Mono kicker, faded ink, sits
+ * tight under the call_number without competing visually. */
+.filing_tray__draft-provenance {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-xs);
+  letter-spacing: var(--tracking-mono);
+  color: var(--color-ink-faint);
+  text-transform: uppercase;
+  margin-top: 0.125rem;
+  margin-bottom: 0.25rem;
+}
+
 /* Discard exit animation — applied via `phx-remove`
    (JS.transition "filing_tray__draft--discarding", time: 280) so
    Phoenix's transition tracker holds the DOM removal until the

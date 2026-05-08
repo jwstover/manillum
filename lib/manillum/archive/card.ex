@@ -76,7 +76,11 @@ defmodule Manillum.Archive.Card do
 
       prepare build(
                 sort: [inserted_at: :desc],
-                load: [:capture, :call_number, collision_card: [:call_number]]
+                load: [
+                  :call_number,
+                  capture: [:conversation, :message],
+                  collision_card: [:call_number]
+                ]
               )
     end
 
