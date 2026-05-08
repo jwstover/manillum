@@ -287,6 +287,56 @@ defmodule Manillum.Archive.CardTest do
     end
   end
 
+  describe ":unfile action" do
+    setup do
+      user = Ash.Seed.seed!(Manillum.Accounts.User, %{email: "unfile_test@example.com"})
+
+      seed = fn slug, status ->
+        Ash.Seed.seed!(Card, %{
+          user_id: user.id,
+          drawer: :ANT,
+          date_token: "1177BC",
+          slug: slug,
+          card_type: :event,
+          front: "F",
+          back: "B",
+          status: status
+        })
+      end
+
+      {:ok, user: user, seed: seed}
+    end
+
+    test "transitions a :filed card back to :draft", %{seed: seed} do
+      card = seed.("FILED-UNDO", :filed)
+
+      assert {:ok, drafted} =
+               card
+               |> Ash.Changeset.for_update(:unfile, %{})
+               |> Ash.update()
+
+      assert drafted.status == :draft
+    end
+
+    test "rejects unfiling a :draft card", %{seed: seed} do
+      card = seed.("DRAFT-UNDO", :draft)
+
+      assert {:error, _} =
+               card
+               |> Ash.Changeset.for_update(:unfile, %{})
+               |> Ash.update()
+    end
+
+    test "rejects unfiling an archived card", %{seed: seed} do
+      card = seed.("ARCH-UNDO", :archived)
+
+      assert {:error, _} =
+               card
+               |> Ash.Changeset.for_update(:unfile, %{})
+               |> Ash.update()
+    end
+  end
+
   describe ":discard action" do
     setup do
       user = Ash.Seed.seed!(Manillum.Accounts.User, %{email: "discard_test@example.com"})

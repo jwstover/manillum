@@ -139,6 +139,29 @@ defmodule Manillum.Archive.Card do
       change set_attribute(:status, :filed)
     end
 
+    update :unfile do
+      description """
+      Demote a `:filed` Card back to `:draft`. The reverse of `:file`,
+      used by the filing-tray undo path (M-28, decision 2026-05-07
+      option B — file immediately + `:unfile` on undo). Rejects any
+      current status other than `:filed`.
+
+      The partial unique index on `(user_id, drawer, date_token, slug)`
+      is scoped to `status != :draft` (Slice 6 / M-24), so flipping back
+      to `:draft` releases the constraint cleanly — a future colliding
+      draft can coexist with this one again.
+      """
+
+      accept []
+      require_atomic? false
+
+      validate attribute_equals(:status, :filed) do
+        message "Card must be in :filed status to be unfiled (current: %{value})."
+      end
+
+      change set_attribute(:status, :draft)
+    end
+
     update :rename do
       description """
       Change one or more of `drawer` / `date_token` / `slug`. Validates the

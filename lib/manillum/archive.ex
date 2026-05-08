@@ -16,6 +16,7 @@ defmodule Manillum.Archive do
     resource Manillum.Archive.Card do
       define :draft_card, action: :draft
       define :file_card, action: :file
+      define :unfile_card, action: :unfile
       define :discard_card, action: :discard
       define :list_drafts, action: :my_drafts
       define :propose_call_number, action: :propose_call_number
