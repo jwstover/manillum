@@ -17,8 +17,10 @@
   align-items: center;
   gap: 0.875rem;
   background: var(--color-paper-deep);
-  border-top: 1px solid var(--color-rule-strong);
+  border: 1px solid var(--color-rule-strong);
+  border-bottom-width: 3px;
   padding: 0.75rem var(--margin-page-x);
+  margin: 1.25rem var(--margin-page-x) 0.75rem;
 }
 
 .composer__kicker {
