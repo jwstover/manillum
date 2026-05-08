@@ -32,6 +32,7 @@ defmodule ManillumWeb.FilingTrayComponent do
 
   alias Manillum.Archive
   alias Manillum.Archive.Card
+  alias Phoenix.LiveView.JS
 
   @impl true
   def update(%{action: {:capture_submitted, %{capture_id: capture_id}}}, socket) do
@@ -167,6 +168,7 @@ defmodule ManillumWeb.FilingTrayComponent do
             :for={{dom_id, draft} <- @streams.drafts}
             id={dom_id}
             class="filing_tray__draft"
+            phx-remove={JS.transition("filing_tray__draft--discarding", time: 280)}
           >
             <.draft_card draft={draft} target={@myself} />
           </article>

@@ -21,10 +21,9 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  padding: 1rem 1rem 1rem 0.75rem;
+  padding: 1rem 1rem 0rem 0.75rem;
   background: transparent;
   border: 0;
-  overflow: hidden;
   /* Width + opacity animate together when --dismissed flips. The padding
    * collapses too so the rail's content tracks the rail edge as it slides
    * out — without it, the inner padding holds visible space until the
@@ -33,6 +32,15 @@
     width 260ms ease,
     opacity 200ms ease,
     padding 260ms ease;
+}
+
+/* `overflow: hidden` is scoped to the dismissed state so the spine-
+ * collapse animation clips the rail's content as width transitions to
+ * 0. We deliberately keep the open rail's overflow visible — the
+ * discard exit animation translates draft cards past the right edge of
+ * the rail, and we want that to render. */
+.filing_tray__container--dismissed .filing_tray {
+  overflow: hidden;
 }
 
 .filing_tray--empty,
@@ -105,6 +113,11 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  /* Explicit overflow-x avoids the spec coercion: setting overflow-y:
+   * auto with the default overflow-x: visible forces overflow-x to auto
+   * too (a horizontal scrollbar would appear when the discard exit
+   * animation slides a card off the right edge). `hidden` clips cleanly. */
+  overflow-x: hidden;
 }
 
 /* Container in the conversation grid. Always rendered (so Phoenix
@@ -206,6 +219,28 @@
    its panel. Spacing between drafts. */
 .filing_tray__draft + .filing_tray__draft {
   margin-top: 0.625rem;
+}
+
+/* Discard exit animation — applied via `phx-remove`
+   (JS.transition "filing_tray__draft--discarding", time: 280) so
+   Phoenix's transition tracker holds the DOM removal until the
+   animation has finished playing. The card slides out to the right
+   and fades. `forwards` keeps the end state so the element doesn't
+   snap back to opacity:1 during the small remaining hold. */
+@keyframes filing_tray_draft_discard {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(110%);
+    opacity: 0;
+  }
+}
+
+.filing_tray__draft--discarding {
+  animation: filing_tray_draft_discard 260ms ease-in forwards;
+  pointer-events: none;
 }
 
 .filing_tray__draft-head {
