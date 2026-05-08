@@ -151,6 +151,50 @@ defmodule ManillumWeb.FilingTrayComponent do
     {:noreply, assign(socket, :failure, nil)}
   end
 
+  # Bulk file action — fires `Archive.file_card/2` for every draft
+  # currently visible to the actor in one shot. The animation runs
+  # client-side via the colocated `FilingTrayBatch` hook: server
+  # `push_event`s the dom_ids list and the hook adds the
+  # `filing_tray__draft--filing` class to each (with an 80ms stagger
+  # so the rail visibly cascades rather than flashing every stamp at
+  # once). Failed file calls are skipped silently — the surviving
+  # batch still renders an undo flash with the correct count.
+  def handle_event("file_all", _params, socket) do
+    actor = socket.assigns.actor
+
+    filed =
+      actor
+      |> list_drafts()
+      |> Enum.flat_map(fn draft ->
+        case Archive.file_card(draft, actor: actor) do
+          {:ok, _} ->
+            [
+              %{
+                card_id: draft.id,
+                dom_id: "drafts-#{draft.id}",
+                call_number: draft.call_number
+              }
+            ]
+
+          _ ->
+            []
+        end
+      end)
+
+    case filed do
+      [] ->
+        {:noreply, socket}
+
+      filed ->
+        send(self(), {:filed_all_for_undo, %{filed: filed}})
+
+        {:noreply,
+         push_event(socket, "filing_tray:start_animations", %{
+           dom_ids: Enum.map(filed, & &1.dom_id)
+         })}
+    end
+  end
+
   # Open inline edit on a draft. Builds a plain Phoenix form (not an
   # AshPhoenix.Form because the save path dispatches to two Ash actions
   # — `:rename` for call-number segments and `:edit_content` for
@@ -377,7 +421,11 @@ defmodule ManillumWeb.FilingTrayComponent do
       |> assign(:in_flight_count, MapSet.size(assigns.in_flight))
 
     ~H"""
-    <div class={tray_container_classes(@dismissed, @draft_count, @failure, @in_flight_count)} id={@id}>
+    <div
+      class={tray_container_classes(@dismissed, @draft_count, @failure, @in_flight_count)}
+      id={@id}
+      phx-hook=".FilingTrayBatch"
+    >
       <button
         :if={@draft_count > 0 || @in_flight_count > 0 || @failure}
         type="button"
@@ -399,6 +447,17 @@ defmodule ManillumWeb.FilingTrayComponent do
         close_event="close_tray"
         close_target={@myself}
       >
+        <:actions :if={@tray_state == :review and @draft_count > 0}>
+          <button
+            type="button"
+            class="action_pill action_pill--primary"
+            phx-click="file_all"
+            phx-target={@myself}
+          >
+            <.icon name="hero-archive-box-micro" /> file all
+          </button>
+        </:actions>
+
         <div :if={@failure} class="filing_tray__failure">
           <.icon name="hero-exclamation-triangle-micro" /> {failure_message(@failure)}
           <button type="button" phx-click="dismiss_failure" phx-target={@myself}>dismiss</button>
@@ -430,6 +489,29 @@ defmodule ManillumWeb.FilingTrayComponent do
           </article>
         </div>
       </.filing_tray>
+      <script :type={Phoenix.LiveView.ColocatedHook} name=".FilingTrayBatch">
+        // Cascade-applies the file animation to a list of draft articles
+        // when the server fires `filing_tray:start_animations`. Same JS
+        // chain as the per-pill click (strip `phx-remove`, add the
+        // `--filing` class) but staggered so the rail visibly cascades
+        // rather than flashing all stamps at once. Used by the bulk
+        // `file_all` action; the per-card path stays inline on the pill.
+        export default {
+          mounted() {
+            this.handleEvent("filing_tray:start_animations", ({ dom_ids }) => {
+              if (!Array.isArray(dom_ids)) return;
+              dom_ids.forEach((id, i) => {
+                setTimeout(() => {
+                  const el = document.getElementById(id);
+                  if (!el) return;
+                  el.removeAttribute("phx-remove");
+                  el.classList.add("filing_tray__draft--filing");
+                }, i * 80);
+              });
+            });
+          }
+        };
+      </script>
     </div>
     """
   end

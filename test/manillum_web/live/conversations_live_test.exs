@@ -585,6 +585,136 @@ defmodule ManillumWeb.ConversationsLiveTest do
     end
   end
 
+  describe "file all — Slice 10B / M-63" do
+    setup ctx do
+      user = make_user("file_all_#{System.unique_integer([:positive])}@example.com")
+      conversation = make_conversation(user)
+      _message = make_message(conversation)
+      conn = log_in(ctx.conn, user)
+
+      {:ok, conn: conn, user: user, conversation: conversation}
+    end
+
+    test "the `file all` pill renders only when the tray is in :review with drafts", ctx do
+      # Tray is :empty — no file all pill
+      {:ok, view, html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
+      refute html =~ "file all"
+
+      capture = seed_capture(ctx.user, ctx.conversation)
+      draft = seed_draft(ctx.user, capture, "FA-FIRST")
+
+      Phoenix.PubSub.broadcast(
+        Manillum.PubSub,
+        "user:#{ctx.user.id}:cataloging",
+        {:cards_drafted,
+         %{
+           capture_id: capture.id,
+           conversation_id: ctx.conversation.id,
+           draft_ids: [draft.id]
+         }}
+      )
+
+      _ = :sys.get_state(view.pid)
+      assert render(view) =~ "file all"
+    end
+
+    test "file all flips every draft to :filed and surfaces a single batch undo flash", ctx do
+      capture = seed_capture(ctx.user, ctx.conversation)
+      draft1 = seed_draft(ctx.user, capture, "BATCH-A")
+      draft2 = seed_draft(ctx.user, capture, "BATCH-B")
+      draft3 = seed_draft(ctx.user, capture, "BATCH-C")
+
+      {:ok, view, _html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
+
+      view
+      |> element("#filing-tray button[phx-click='file_all']")
+      |> render_click()
+
+      _ = :sys.get_state(view.pid)
+
+      # All three drafts flipped to :filed
+      for d <- [draft1, draft2, draft3] do
+        card = Ash.get!(Manillum.Archive.Card, d.id, authorize?: false)
+        assert card.status == :filed
+      end
+
+      # One undo flash with the batch count
+      html = render(view)
+      assert html =~ ~s(id="undo-toast")
+      assert html =~ "Filed 3 cards"
+      assert html =~ ~s(phx-click="undo_file")
+    end
+
+    test "undo from a batch flash restores all cards to drafts", ctx do
+      capture = seed_capture(ctx.user, ctx.conversation)
+      draft1 = seed_draft(ctx.user, capture, "BATCH-UNDO-A")
+      draft2 = seed_draft(ctx.user, capture, "BATCH-UNDO-B")
+
+      {:ok, view, _html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
+
+      view
+      |> element("#filing-tray button[phx-click='file_all']")
+      |> render_click()
+
+      _ = :sys.get_state(view.pid)
+
+      view |> element("#undo-toast button[phx-click='undo_file']") |> render_click()
+      _ = :sys.get_state(view.pid)
+
+      for d <- [draft1, draft2] do
+        card = Ash.get!(Manillum.Archive.Card, d.id, authorize?: false)
+        assert card.status == :draft
+      end
+
+      html = render(view)
+      refute html =~ ~s(id="undo-toast")
+      # Cards re-rendered in the tray
+      assert html =~ "ANT · 1177BC · BATCH-UNDO-A"
+      assert html =~ "ANT · 1177BC · BATCH-UNDO-B"
+    end
+
+    test "undo_expire_batch clears the toast without changing card status", ctx do
+      capture = seed_capture(ctx.user, ctx.conversation)
+      draft1 = seed_draft(ctx.user, capture, "BATCH-EXP-A")
+      draft2 = seed_draft(ctx.user, capture, "BATCH-EXP-B")
+
+      {:ok, view, _html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
+
+      view
+      |> element("#filing-tray button[phx-click='file_all']")
+      |> render_click()
+
+      _ = :sys.get_state(view.pid)
+      assert render(view) =~ ~s(id="undo-toast")
+
+      send(view.pid, {:undo_expire_batch, [draft1.id, draft2.id]})
+      _ = :sys.get_state(view.pid)
+
+      html = render(view)
+      refute html =~ ~s(id="undo-toast")
+
+      # Cards stay :filed
+      for d <- [draft1, draft2] do
+        card = Ash.get!(Manillum.Archive.Card, d.id, authorize?: false)
+        assert card.status == :filed
+      end
+    end
+
+    test "file all with no drafts is a no-op (no flash, no error)", ctx do
+      # No drafts seeded. The tray is :empty on mount, so the file_all
+      # button is hidden via the `:if` guard on the `:actions` slot.
+      # No way for the user to fire the event in this state.
+      {:ok, view, html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
+
+      refute html =~ "file all"
+      refute html =~ "phx-click=\"file_all\""
+
+      # No undo flash is queued either.
+      _ = :sys.get_state(view.pid)
+      refute render(view) =~ ~s(id="undo-toast")
+    end
+  end
+
   describe "inline edit on filing-tray drafts — Slice 10B / M-62" do
     setup ctx do
       user = make_user("edit_action_#{System.unique_integer([:positive])}@example.com")
