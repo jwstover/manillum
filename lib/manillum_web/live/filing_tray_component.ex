@@ -241,24 +241,31 @@ defmodule ManillumWeb.FilingTrayComponent do
   # required input).
   def handle_event("validate_edit", %{"card_id" => id, "draft" => params}, socket) do
     form = to_form(params, as: "draft")
-    editing = Map.put(socket.assigns.editing, id, form)
-    collisions = Map.put(socket.assigns.collisions, id, propose_collision(socket, params))
+    prev_collision = Map.get(socket.assigns.collisions, id)
+    next_collision = propose_collision(socket, params)
 
     socket =
       socket
-      |> assign(:editing, editing)
-      |> assign(:collisions, collisions)
+      |> assign(:editing, Map.put(socket.assigns.editing, id, form))
+      |> assign(:collisions, Map.put(socket.assigns.collisions, id, next_collision))
 
-    # Re-insert the draft so the article re-renders against the new
-    # form params + collision state. Stream items are otherwise
-    # write-only — assigns alone don't propagate into stream-rendered
-    # children. Best-effort: only insert if we can still see the row.
-    actor = socket.assigns.actor
-
+    # Only re-insert the stream item when the rendered collision state
+    # actually changed. Typing in front/back doesn't affect anything the
+    # article displays beyond what morphdom already preserves on the
+    # form inputs (stable IDs + the `<.form>` wrapper handle value/
+    # focus preservation), and an unconditional stream_insert here
+    # blows the user's focus out on every keystroke.
     socket =
-      case Ash.get(Card, id, actor: actor, load: [:call_number, collision_card: [:call_number]]) do
-        {:ok, card} -> stream_insert(socket, :drafts, card)
-        _ -> socket
+      if collision_changed?(prev_collision, next_collision) do
+        case Ash.get(Card, id,
+               actor: socket.assigns.actor,
+               load: [:call_number, collision_card: [:call_number]]
+             ) do
+          {:ok, card} -> stream_insert(socket, :drafts, card)
+          _ -> socket
+        end
+      else
+        socket
       end
 
     {:noreply, socket}
@@ -317,6 +324,13 @@ defmodule ManillumWeb.FilingTrayComponent do
   defp bump_count(socket, delta) do
     update(socket, :draft_count, &max(0, &1 + delta))
   end
+
+  defp collision_changed?(a, b) do
+    existing_id(a) != existing_id(b)
+  end
+
+  defp existing_id(%{existing_card_id: id}), do: id
+  defp existing_id(_), do: nil
 
   defp build_edit_form(card) do
     to_form(
@@ -540,9 +554,13 @@ defmodule ManillumWeb.FilingTrayComponent do
         <input type="hidden" name="card_id" value={@draft.id} />
 
         <div class="filing_tray__edit-row filing_tray__edit-row--segments">
-          <label class="filing_tray__edit-label">
+          <label class="filing_tray__edit-label" for={"edit-#{@draft.id}-drawer"}>
             <span class="filing_tray__edit-label-text">drawer</span>
-            <select name="draft[drawer]" class="filing_tray__edit-input">
+            <select
+              name="draft[drawer]"
+              id={"edit-#{@draft.id}-drawer"}
+              class="filing_tray__edit-input"
+            >
               <option
                 :for={d <- ~w(ANT CLA MED REN EAR MOD CON)}
                 value={d}
@@ -552,20 +570,25 @@ defmodule ManillumWeb.FilingTrayComponent do
               </option>
             </select>
           </label>
-          <label class="filing_tray__edit-label">
+          <label class="filing_tray__edit-label" for={"edit-#{@draft.id}-date_token"}>
             <span class="filing_tray__edit-label-text">date</span>
             <input
               type="text"
               name="draft[date_token]"
+              id={"edit-#{@draft.id}-date_token"}
               value={@form.params["date_token"]}
               class="filing_tray__edit-input filing_tray__edit-input--date"
             />
           </label>
-          <label class="filing_tray__edit-label filing_tray__edit-label--slug">
+          <label
+            class="filing_tray__edit-label filing_tray__edit-label--slug"
+            for={"edit-#{@draft.id}-slug"}
+          >
             <span class="filing_tray__edit-label-text">slug</span>
             <input
               type="text"
               name="draft[slug]"
+              id={"edit-#{@draft.id}-slug"}
               value={@form.params["slug"]}
               class="filing_tray__edit-input filing_tray__edit-input--slug"
             />
@@ -576,19 +599,27 @@ defmodule ManillumWeb.FilingTrayComponent do
           <.icon name="hero-exclamation-triangle-micro" /> collides with an existing filed card
         </div>
 
-        <label class="filing_tray__edit-label filing_tray__edit-label--block">
+        <label
+          class="filing_tray__edit-label filing_tray__edit-label--block"
+          for={"edit-#{@draft.id}-front"}
+        >
           <span class="filing_tray__edit-label-text">front</span>
           <textarea
             name="draft[front]"
+            id={"edit-#{@draft.id}-front"}
             rows="3"
             class="filing_tray__edit-input filing_tray__edit-input--front"
           >{@form.params["front"]}</textarea>
         </label>
 
-        <label class="filing_tray__edit-label filing_tray__edit-label--block">
+        <label
+          class="filing_tray__edit-label filing_tray__edit-label--block"
+          for={"edit-#{@draft.id}-back"}
+        >
           <span class="filing_tray__edit-label-text">back</span>
           <textarea
             name="draft[back]"
+            id={"edit-#{@draft.id}-back"}
             rows="7"
             class="filing_tray__edit-input filing_tray__edit-input--back"
           >{@form.params["back"]}</textarea>

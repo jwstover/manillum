@@ -690,6 +690,67 @@ defmodule ManillumWeb.ConversationsLiveTest do
              )
     end
 
+    test "renaming a colliding draft to non-colliding segments clears the banner", ctx do
+      existing =
+        Ash.Seed.seed!(Manillum.Archive.Card, %{
+          user_id: ctx.user.id,
+          drawer: :ANT,
+          date_token: "1177BC",
+          slug: "EXISTING",
+          card_type: :event,
+          front: "F",
+          back: "B",
+          status: :filed
+        })
+
+      capture = seed_capture(ctx.user, ctx.conversation)
+
+      draft =
+        Ash.Seed.seed!(Manillum.Archive.Card, %{
+          user_id: ctx.user.id,
+          capture_id: capture.id,
+          drawer: :ANT,
+          date_token: "1177BC",
+          slug: "RESYNC-DRAFT",
+          card_type: :event,
+          front: "F",
+          back: "B",
+          status: :draft,
+          collision_card_id: existing.id
+        })
+
+      {:ok, view, html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
+      assert html =~ "filing_tray__draft-collision"
+
+      # Open inline edit
+      view
+      |> element(
+        "article[id='drafts-#{draft.id}'] .filing_tray__draft-collision-actions button[phx-click='edit_draft']"
+      )
+      |> render_click()
+
+      # Submit a save with non-colliding segments (different date_token).
+      view
+      |> form("article[id='drafts-#{draft.id}'] form", %{
+        "card_id" => draft.id,
+        "draft" => %{
+          "drawer" => "ANT",
+          "date_token" => "1300BC",
+          "slug" => "RESYNC-DRAFT",
+          "front" => "F",
+          "back" => "B"
+        }
+      })
+      |> render_submit()
+
+      saved = Ash.get!(Manillum.Archive.Card, draft.id, authorize?: false)
+      assert saved.collision_card_id == nil
+
+      html = render(view)
+      refute html =~ "filing_tray__draft-collision"
+      assert html =~ "ANT · 1300BC · RESYNC-DRAFT"
+    end
+
     test "edit slug from the collision banner opens inline edit", ctx do
       existing =
         Ash.Seed.seed!(Manillum.Archive.Card, %{
