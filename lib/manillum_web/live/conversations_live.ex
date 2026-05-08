@@ -246,6 +246,19 @@ defmodule ManillumWeb.ConversationsLive do
               //    screen. Anchoring is restored after the transition so
               //    streaming new messages while scrolled up still keeps
               //    the user's view stable.
+              //
+              // 4. Reassert `is-scrolled` after morphdom passes. The
+              //    class is added at runtime by this hook, but the
+              //    server template renders `.conversation` with just
+              //    `class="conversation"`. Every `phx-change` keystroke
+              //    on the composer round-trips to the server and
+              //    morphdom can rewrite the class attribute, wiping our
+              //    runtime addition. Without this, each keystroke flashes
+              //    the chrome open for ~220ms (CSS transition) before
+              //    the next scroll event re-collapses it. A
+              //    MutationObserver on the class attribute re-applies
+              //    our authoritative state as a microtask — before the
+              //    next paint — so the wipe is never visible.
               const ENTER_THRESHOLD = 120;
               const EXIT_THRESHOLD = 24;
               const TOGGLE_LOCK_MS = 260;
@@ -256,20 +269,24 @@ defmodule ManillumWeb.ConversationsLive do
                   this.lockedUntil = 0;
                   this.recheckTimer = null;
                   this.anchorRestoreTimer = null;
+                  this.collapsed = false;
+                  this.applyCollapsed = (val) => {
+                    this.collapsed = val;
+                    if (this.root) this.root.classList.toggle("is-scrolled", val);
+                  };
                   this.onScroll = () => {
                     if (!this.root) return;
                     if (performance.now() < this.lockedUntil) return;
                     const distance = Math.abs(this.el.scrollTop);
-                    const isScrolled = this.root.classList.contains("is-scrolled");
-                    const next = isScrolled
+                    const next = this.collapsed
                       ? distance > EXIT_THRESHOLD
                       : distance > ENTER_THRESHOLD;
-                    if (next !== isScrolled) {
+                    if (next !== this.collapsed) {
                       // Suppress scroll-anchoring for the transition so
                       // the browser doesn't fight the user's scroll input
                       // each frame as the convo_header collapses.
                       this.el.style.overflowAnchor = "none";
-                      this.root.classList.toggle("is-scrolled", next);
+                      this.applyCollapsed(next);
                       this.lockedUntil = performance.now() + TOGGLE_LOCK_MS;
                       // After the lock lifts, re-evaluate once. If the
                       // transition's layout shift left scrollTop in a
@@ -291,6 +308,20 @@ defmodule ManillumWeb.ConversationsLive do
                     }
                   };
                   this.el.addEventListener("scroll", this.onScroll, { passive: true });
+                  // Watch for morphdom wiping our runtime class. Fires
+                  // as a microtask before the next paint, so the wipe
+                  // never reaches the screen.
+                  if (this.root) {
+                    this.classObserver = new MutationObserver(() => {
+                      if (this.root.classList.contains("is-scrolled") !== this.collapsed) {
+                        this.root.classList.toggle("is-scrolled", this.collapsed);
+                      }
+                    });
+                    this.classObserver.observe(this.root, {
+                      attributes: true,
+                      attributeFilter: ["class"],
+                    });
+                  }
                   // Re-evaluate on mount: a navigation between conversations
                   // can land the thread at a non-zero scroll position before
                   // any user input fires the listener.
@@ -300,6 +331,7 @@ defmodule ManillumWeb.ConversationsLive do
                   this.el.removeEventListener("scroll", this.onScroll);
                   clearTimeout(this.recheckTimer);
                   clearTimeout(this.anchorRestoreTimer);
+                  this.classObserver?.disconnect();
                   this.el.style.overflowAnchor = "";
                   if (this.root) this.root.classList.remove("is-scrolled");
                 },
@@ -321,7 +353,7 @@ defmodule ManillumWeb.ConversationsLive do
                 >
                   <button
                     type="button"
-                    class="message__file_all_btn"
+                    class="action_pill"
                     phx-click="file"
                     phx-value-scope="whole"
                     phx-value-message-id={message_field(message, :id)}
