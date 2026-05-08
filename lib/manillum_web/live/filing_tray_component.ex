@@ -493,7 +493,7 @@ defmodule ManillumWeb.FilingTrayComponent do
           <span class="filing_tray__edit-label-text">front</span>
           <textarea
             name="draft[front]"
-            rows="2"
+            rows="3"
             class="filing_tray__edit-input filing_tray__edit-input--front"
           >{@form.params["front"]}</textarea>
         </label>
@@ -502,7 +502,7 @@ defmodule ManillumWeb.FilingTrayComponent do
           <span class="filing_tray__edit-label-text">back</span>
           <textarea
             name="draft[back]"
-            rows="3"
+            rows="7"
             class="filing_tray__edit-input filing_tray__edit-input--back"
           >{@form.params["back"]}</textarea>
         </label>

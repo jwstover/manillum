@@ -422,13 +422,18 @@
 .filing_tray__edit-input--front,
 .filing_tray__edit-input--back {
   resize: vertical;
-  min-height: 2.5rem;
+  line-height: 1.45;
 }
 
 .filing_tray__edit-input--front {
   font-family: var(--font-display);
   font-size: 0.875rem;
   font-weight: 500;
+  min-height: 4rem;
+}
+
+.filing_tray__edit-input--back {
+  min-height: 9rem;
 }
 
 .filing_tray__edit-collision {
