@@ -74,7 +74,10 @@ defmodule Manillum.Archive.Card do
 
       filter expr(user_id == ^actor(:id) and status == :draft)
 
-      prepare build(sort: [inserted_at: :desc], load: [:capture, :call_number])
+      prepare build(
+                sort: [inserted_at: :desc],
+                load: [:capture, :call_number, collision_card: [:call_number]]
+              )
     end
 
     destroy :discard do
@@ -336,6 +339,18 @@ defmodule Manillum.Archive.Card do
 
     belongs_to :capture, Manillum.Archive.Capture do
       public? true
+    end
+
+    # Pointer to the existing filed card whose call-number segments
+    # collide with this draft's. Mirrors `:collision_card_id`;
+    # surfaces in the filing tray as "Looks like your existing
+    # card …". Loaded explicitly by `:my_drafts` so the tray can
+    # render the colliding card's call_number without an extra fetch.
+    belongs_to :collision_card, __MODULE__ do
+      source_attribute :collision_card_id
+      destination_attribute :id
+      public? true
+      define_attribute? false
     end
 
     many_to_many :tags, Manillum.Archive.Tag do

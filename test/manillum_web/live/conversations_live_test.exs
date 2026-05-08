@@ -585,6 +585,154 @@ defmodule ManillumWeb.ConversationsLiveTest do
     end
   end
 
+  describe "slug-collision banner — Slice 10B / M-64" do
+    setup ctx do
+      user = make_user("collision_#{System.unique_integer([:positive])}@example.com")
+      conversation = make_conversation(user)
+      _message = make_message(conversation)
+      conn = log_in(ctx.conn, user)
+
+      {:ok, conn: conn, user: user, conversation: conversation}
+    end
+
+    test "renders the brass collision banner when collision_card_id is set", ctx do
+      existing =
+        Ash.Seed.seed!(Manillum.Archive.Card, %{
+          user_id: ctx.user.id,
+          drawer: :ANT,
+          date_token: "1177BC",
+          slug: "EXISTING-CARD",
+          card_type: :event,
+          front: "F",
+          back: "B",
+          status: :filed
+        })
+
+      capture = seed_capture(ctx.user, ctx.conversation)
+
+      _draft =
+        Ash.Seed.seed!(Manillum.Archive.Card, %{
+          user_id: ctx.user.id,
+          capture_id: capture.id,
+          drawer: :ANT,
+          date_token: "1177BC",
+          slug: "COLLIDE-DRAFT",
+          card_type: :event,
+          front: "front for COLLIDE-DRAFT",
+          back: "back for COLLIDE-DRAFT",
+          status: :draft,
+          collision_card_id: existing.id
+        })
+
+      {:ok, _view, html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
+
+      assert html =~ "filing_tray__draft-collision"
+      assert html =~ "Looks like your existing card"
+      assert html =~ "ANT · 1177BC · EXISTING-CARD"
+    end
+
+    test "draft without a collision renders no banner", ctx do
+      capture = seed_capture(ctx.user, ctx.conversation)
+      _draft = seed_draft(ctx.user, capture, "CLEAN-DRAFT")
+
+      {:ok, _view, html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
+
+      refute html =~ "filing_tray__draft-collision"
+      assert html =~ "ANT · 1177BC · CLEAN-DRAFT"
+    end
+
+    test "the file pill is hidden on a colliding draft", ctx do
+      existing =
+        Ash.Seed.seed!(Manillum.Archive.Card, %{
+          user_id: ctx.user.id,
+          drawer: :ANT,
+          date_token: "1177BC",
+          slug: "EXISTING",
+          card_type: :event,
+          front: "F",
+          back: "B",
+          status: :filed
+        })
+
+      capture = seed_capture(ctx.user, ctx.conversation)
+
+      draft =
+        Ash.Seed.seed!(Manillum.Archive.Card, %{
+          user_id: ctx.user.id,
+          capture_id: capture.id,
+          drawer: :ANT,
+          date_token: "1177BC",
+          slug: "GATED-DRAFT",
+          card_type: :event,
+          front: "front for GATED-DRAFT",
+          back: "back for GATED-DRAFT",
+          status: :draft,
+          collision_card_id: existing.id
+        })
+
+      {:ok, view, _html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
+
+      # No file pill rendered inside the colliding draft article
+      refute has_element?(
+               view,
+               "article[id='drafts-#{draft.id}'] .action_pill--primary"
+             )
+
+      # Edit slug + discard pills are present in the collision banner
+      assert has_element?(
+               view,
+               "article[id='drafts-#{draft.id}'] .filing_tray__draft-collision-actions button[phx-click='edit_draft']"
+             )
+
+      assert has_element?(
+               view,
+               "article[id='drafts-#{draft.id}'] .filing_tray__draft-collision-actions button[phx-click='discard']"
+             )
+    end
+
+    test "edit slug from the collision banner opens inline edit", ctx do
+      existing =
+        Ash.Seed.seed!(Manillum.Archive.Card, %{
+          user_id: ctx.user.id,
+          drawer: :ANT,
+          date_token: "1177BC",
+          slug: "EXISTING",
+          card_type: :event,
+          front: "F",
+          back: "B",
+          status: :filed
+        })
+
+      capture = seed_capture(ctx.user, ctx.conversation)
+
+      draft =
+        Ash.Seed.seed!(Manillum.Archive.Card, %{
+          user_id: ctx.user.id,
+          capture_id: capture.id,
+          drawer: :ANT,
+          date_token: "1177BC",
+          slug: "OPEN-EDIT",
+          card_type: :event,
+          front: "F",
+          back: "B",
+          status: :draft,
+          collision_card_id: existing.id
+        })
+
+      {:ok, view, _html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
+
+      view
+      |> element(
+        "article[id='drafts-#{draft.id}'] .filing_tray__draft-collision-actions button[phx-click='edit_draft']"
+      )
+      |> render_click()
+
+      html = render(view)
+      assert html =~ "filing_tray__edit"
+      assert html =~ ~s(name="draft[slug]")
+    end
+  end
+
   describe "file all — Slice 10B / M-63" do
     setup ctx do
       user = make_user("file_all_#{System.unique_integer([:positive])}@example.com")

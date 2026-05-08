@@ -125,7 +125,8 @@ defmodule ManillumWeb.FilingTrayComponent do
   def handle_event("file_card", %{"id" => id, "dom-id" => dom_id}, socket) do
     actor = socket.assigns.actor
 
-    with {:ok, card} <- Ash.get(Card, id, actor: actor, load: [:call_number]),
+    with {:ok, card} <-
+           Ash.get(Card, id, actor: actor, load: [:call_number, collision_card: [:call_number]]),
          {:ok, filed} <- Archive.file_card(card, actor: actor) do
       send(
         self(),
@@ -204,7 +205,8 @@ defmodule ManillumWeb.FilingTrayComponent do
   def handle_event("edit_draft", %{"id" => id}, socket) do
     actor = socket.assigns.actor
 
-    with {:ok, card} <- Ash.get(Card, id, actor: actor, load: [:call_number]) do
+    with {:ok, card} <-
+           Ash.get(Card, id, actor: actor, load: [:call_number, collision_card: [:call_number]]) do
       form = build_edit_form(card)
 
       {:noreply,
@@ -219,7 +221,8 @@ defmodule ManillumWeb.FilingTrayComponent do
   def handle_event("cancel_edit", %{"id" => id}, socket) do
     actor = socket.assigns.actor
 
-    with {:ok, card} <- Ash.get(Card, id, actor: actor, load: [:call_number]) do
+    with {:ok, card} <-
+           Ash.get(Card, id, actor: actor, load: [:call_number, collision_card: [:call_number]]) do
       {:noreply,
        socket
        |> assign(:editing, Map.delete(socket.assigns.editing, id))
@@ -253,7 +256,7 @@ defmodule ManillumWeb.FilingTrayComponent do
     actor = socket.assigns.actor
 
     socket =
-      case Ash.get(Card, id, actor: actor, load: [:call_number]) do
+      case Ash.get(Card, id, actor: actor, load: [:call_number, collision_card: [:call_number]]) do
         {:ok, card} -> stream_insert(socket, :drafts, card)
         _ -> socket
       end
@@ -264,10 +267,12 @@ defmodule ManillumWeb.FilingTrayComponent do
   def handle_event("save_edit", %{"card_id" => id, "draft" => params}, socket) do
     actor = socket.assigns.actor
 
-    with {:ok, card} <- Ash.get(Card, id, actor: actor, load: [:call_number]),
+    with {:ok, card} <-
+           Ash.get(Card, id, actor: actor, load: [:call_number, collision_card: [:call_number]]),
          {:ok, card} <- maybe_rename(card, params, actor),
          {:ok, card} <- maybe_edit_content(card, params, actor) do
-      card = Ash.load!(card, [:call_number, :capture], actor: actor)
+      card =
+        Ash.load!(card, [:call_number, :capture, collision_card: [:call_number]], actor: actor)
 
       {:noreply,
        socket
@@ -619,9 +624,39 @@ defmodule ManillumWeb.FilingTrayComponent do
         <.call_number inline>{@draft.call_number}</.call_number>
       </div>
       <.drawer_label>{drawer_name(@draft.drawer)}</.drawer_label>
+
+      <div :if={collision_card(@draft)} class="filing_tray__draft-collision">
+        <div class="filing_tray__draft-collision-body">
+          <.icon name="hero-exclamation-triangle-micro" />
+          Looks like your existing card <.call_number inline tone={:brass}>
+            {collision_card(@draft).call_number}
+          </.call_number>.
+        </div>
+        <div class="filing_tray__draft-collision-actions">
+          <button
+            type="button"
+            class="action_pill action_pill--ghost"
+            phx-click="edit_draft"
+            phx-value-id={@draft.id}
+            phx-target={@target}
+          >
+            edit slug
+          </button>
+          <button
+            type="button"
+            class="action_pill action_pill--bare"
+            phx-click="discard"
+            phx-value-id={@draft.id}
+            phx-target={@target}
+          >
+            discard
+          </button>
+        </div>
+      </div>
+
       <div class="filing_tray__draft-front">{@draft.front}</div>
       <div class="filing_tray__draft-back">{@draft.back}</div>
-      <div class="filing_tray__draft-actions">
+      <div :if={!collision_card(@draft)} class="filing_tray__draft-actions">
         <button
           type="button"
           class="action_pill action_pill--primary"
@@ -651,6 +686,13 @@ defmodule ManillumWeb.FilingTrayComponent do
     </.card>
     """
   end
+
+  # Returns the loaded `collision_card` struct (with its call_number)
+  # if this draft has a collision against an existing filed card; nil
+  # otherwise. Handles the case where the relationship hasn't been
+  # explicitly loaded (older code paths) by treating it as `nil`.
+  defp collision_card(%{collision_card: %Card{} = c}), do: c
+  defp collision_card(_), do: nil
 
   # Click handler for the file pill. Adds the `--filing` class to the
   # parent article (which kicks off the FILED-stamp impression + slide-out
