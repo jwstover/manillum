@@ -95,6 +95,8 @@ defmodule ManillumWeb.FilingTrayComponent do
      |> assign_new(:failure, fn -> nil end)
      |> assign_new(:dismissed, fn -> false end)
      |> assign_new(:in_flight, fn -> MapSet.new() end)
+     |> assign_new(:editing, fn -> %{} end)
+     |> assign_new(:collisions, fn -> %{} end)
      |> stream(:drafts, drafts)}
   end
 
@@ -149,6 +151,96 @@ defmodule ManillumWeb.FilingTrayComponent do
     {:noreply, assign(socket, :failure, nil)}
   end
 
+  # Open inline edit on a draft. Builds a plain Phoenix form (not an
+  # AshPhoenix.Form because the save path dispatches to two Ash actions
+  # — `:rename` for call-number segments and `:edit_content` for
+  # front/back/card_type/entities). Re-inserts the draft into the stream
+  # so its article re-renders with the form instead of the read-only
+  # view; the stream item is otherwise the same struct.
+  def handle_event("edit_draft", %{"id" => id}, socket) do
+    actor = socket.assigns.actor
+
+    with {:ok, card} <- Ash.get(Card, id, actor: actor, load: [:call_number]) do
+      form = build_edit_form(card)
+
+      {:noreply,
+       socket
+       |> assign(:editing, Map.put(socket.assigns.editing, id, form))
+       |> stream_insert(:drafts, card)}
+    else
+      {:error, _} -> {:noreply, socket}
+    end
+  end
+
+  def handle_event("cancel_edit", %{"id" => id}, socket) do
+    actor = socket.assigns.actor
+
+    with {:ok, card} <- Ash.get(Card, id, actor: actor, load: [:call_number]) do
+      {:noreply,
+       socket
+       |> assign(:editing, Map.delete(socket.assigns.editing, id))
+       |> assign(:collisions, Map.delete(socket.assigns.collisions, id))
+       |> stream_insert(:drafts, card)}
+    else
+      {:error, _} -> {:noreply, socket}
+    end
+  end
+
+  # phx-change. Refresh the form's params so the inputs keep the
+  # user's typing across re-renders, and re-run `:propose_call_number`
+  # so the slug-collision warning surfaces inline as the user types.
+  # Only re-checks when at least one call-number segment is present
+  # and non-empty (otherwise the proposal would error on a missing
+  # required input).
+  def handle_event("validate_edit", %{"card_id" => id, "draft" => params}, socket) do
+    form = to_form(params, as: "draft")
+    editing = Map.put(socket.assigns.editing, id, form)
+    collisions = Map.put(socket.assigns.collisions, id, propose_collision(socket, params))
+
+    socket =
+      socket
+      |> assign(:editing, editing)
+      |> assign(:collisions, collisions)
+
+    # Re-insert the draft so the article re-renders against the new
+    # form params + collision state. Stream items are otherwise
+    # write-only — assigns alone don't propagate into stream-rendered
+    # children. Best-effort: only insert if we can still see the row.
+    actor = socket.assigns.actor
+
+    socket =
+      case Ash.get(Card, id, actor: actor, load: [:call_number]) do
+        {:ok, card} -> stream_insert(socket, :drafts, card)
+        _ -> socket
+      end
+
+    {:noreply, socket}
+  end
+
+  def handle_event("save_edit", %{"card_id" => id, "draft" => params}, socket) do
+    actor = socket.assigns.actor
+
+    with {:ok, card} <- Ash.get(Card, id, actor: actor, load: [:call_number]),
+         {:ok, card} <- maybe_rename(card, params, actor),
+         {:ok, card} <- maybe_edit_content(card, params, actor) do
+      card = Ash.load!(card, [:call_number, :capture], actor: actor)
+
+      {:noreply,
+       socket
+       |> assign(:editing, Map.delete(socket.assigns.editing, id))
+       |> assign(:collisions, Map.delete(socket.assigns.collisions, id))
+       |> stream_insert(:drafts, card)}
+    else
+      {:error, %Ash.Error.Invalid{} = err} ->
+        send(self(), {:edit_save_failed, id, format_invalid(err)})
+        {:noreply, socket}
+
+      {:error, _} ->
+        send(self(), {:edit_save_failed, id, "Couldn't save the edit."})
+        {:noreply, socket}
+    end
+  end
+
   def handle_event("close_tray", _params, socket) do
     {:noreply, assign(socket, :dismissed, true)}
   end
@@ -175,6 +267,106 @@ defmodule ManillumWeb.FilingTrayComponent do
   # once the last draft is discarded.
   defp bump_count(socket, delta) do
     update(socket, :draft_count, &max(0, &1 + delta))
+  end
+
+  defp build_edit_form(card) do
+    to_form(
+      %{
+        "drawer" => to_string(card.drawer),
+        "date_token" => card.date_token,
+        "slug" => card.slug,
+        "front" => card.front,
+        "back" => card.back
+      },
+      as: "draft"
+    )
+  end
+
+  # Rerun `:propose_call_number` with the new segments to surface a
+  # slug collision inline (same shape `Capture.Changes.RunCataloging`
+  # uses on cataloged drafts). Only reports a collision against an
+  # existing card other than the one being edited — a draft's own
+  # call_number is in the `unique_call_number` index for non-draft
+  # cards only (Slice 6 / M-24), so editing in place doesn't
+  # self-collide, but if the user types segments matching a different
+  # filed card, we surface that.
+  defp propose_collision(socket, params) do
+    drawer = atomize_drawer(params["drawer"])
+    date_token = params["date_token"] || ""
+    slug = params["slug"] || ""
+
+    with true <- drawer != nil,
+         true <- date_token != "",
+         true <- slug != "",
+         {:ok, %{status: :collision, existing_card_id: id}} <-
+           Card
+           |> Ash.ActionInput.for_action(:propose_call_number, %{
+             user_id: socket.assigns.actor.id,
+             drawer: drawer,
+             date_token: date_token,
+             slug: slug,
+             card_type: :event
+           })
+           |> Ash.run_action(authorize?: false) do
+      %{existing_card_id: id}
+    else
+      _ -> nil
+    end
+  end
+
+  defp atomize_drawer(value) when is_binary(value) do
+    String.to_existing_atom(value)
+  rescue
+    ArgumentError -> nil
+  end
+
+  defp atomize_drawer(_), do: nil
+
+  defp maybe_rename(card, params, actor) do
+    new_drawer = atomize_drawer(params["drawer"]) || card.drawer
+    new_date = params["date_token"] || card.date_token
+    new_slug = params["slug"] || card.slug
+
+    if {new_drawer, new_date, new_slug} == {card.drawer, card.date_token, card.slug} do
+      {:ok, card}
+    else
+      card
+      |> Ash.Changeset.for_update(
+        :rename,
+        %{drawer: new_drawer, date_token: new_date, slug: new_slug},
+        actor: actor
+      )
+      |> Ash.update()
+    end
+  end
+
+  defp maybe_edit_content(card, params, actor) do
+    new_front = params["front"] || card.front
+    new_back = params["back"] || card.back
+
+    if new_front == card.front and new_back == card.back do
+      {:ok, card}
+    else
+      card
+      |> Ash.Changeset.for_update(
+        :edit_content,
+        %{front: new_front, back: new_back},
+        actor: actor
+      )
+      |> Ash.update()
+    end
+  end
+
+  defp format_invalid(%Ash.Error.Invalid{errors: errors}) do
+    errors
+    |> Enum.map_join("; ", fn
+      %{message: msg} when is_binary(msg) -> msg
+      err -> inspect(err)
+    end)
+    |> case do
+      "" -> "Couldn't save the edit."
+      msg -> msg
+    end
   end
 
   @impl true
@@ -224,11 +416,113 @@ defmodule ManillumWeb.FilingTrayComponent do
             class="filing_tray__draft"
             phx-remove={JS.transition("filing_tray__draft--discarding", time: 280)}
           >
-            <.draft_card draft={draft} dom_id={dom_id} target={@myself} />
+            <%= case Map.get(@editing, draft.id) do %>
+              <% nil -> %>
+                <.draft_card draft={draft} dom_id={dom_id} target={@myself} />
+              <% form -> %>
+                <.edit_card
+                  draft={draft}
+                  form={form}
+                  collision={Map.get(@collisions, draft.id)}
+                  target={@myself}
+                />
+            <% end %>
           </article>
         </div>
       </.filing_tray>
     </div>
+    """
+  end
+
+  attr :draft, :map, required: true
+  attr :form, :map, required: true
+  attr :collision, :any, default: nil
+  attr :target, :any, required: true
+
+  defp edit_card(assigns) do
+    ~H"""
+    <.card face={:draft}>
+      <.form
+        for={@form}
+        as={:draft}
+        phx-change="validate_edit"
+        phx-submit="save_edit"
+        phx-target={@target}
+        class="filing_tray__edit"
+      >
+        <input type="hidden" name="card_id" value={@draft.id} />
+
+        <div class="filing_tray__edit-row filing_tray__edit-row--segments">
+          <label class="filing_tray__edit-label">
+            <span class="filing_tray__edit-label-text">drawer</span>
+            <select name="draft[drawer]" class="filing_tray__edit-input">
+              <option
+                :for={d <- ~w(ANT CLA MED REN EAR MOD CON)}
+                value={d}
+                selected={to_string(@form.params["drawer"]) == d}
+              >
+                {d}
+              </option>
+            </select>
+          </label>
+          <label class="filing_tray__edit-label">
+            <span class="filing_tray__edit-label-text">date</span>
+            <input
+              type="text"
+              name="draft[date_token]"
+              value={@form.params["date_token"]}
+              class="filing_tray__edit-input filing_tray__edit-input--date"
+            />
+          </label>
+          <label class="filing_tray__edit-label filing_tray__edit-label--slug">
+            <span class="filing_tray__edit-label-text">slug</span>
+            <input
+              type="text"
+              name="draft[slug]"
+              value={@form.params["slug"]}
+              class="filing_tray__edit-input filing_tray__edit-input--slug"
+            />
+          </label>
+        </div>
+
+        <div :if={@collision} class="filing_tray__edit-collision">
+          <.icon name="hero-exclamation-triangle-micro" /> collides with an existing filed card
+        </div>
+
+        <label class="filing_tray__edit-label filing_tray__edit-label--block">
+          <span class="filing_tray__edit-label-text">front</span>
+          <textarea
+            name="draft[front]"
+            rows="2"
+            class="filing_tray__edit-input filing_tray__edit-input--front"
+          >{@form.params["front"]}</textarea>
+        </label>
+
+        <label class="filing_tray__edit-label filing_tray__edit-label--block">
+          <span class="filing_tray__edit-label-text">back</span>
+          <textarea
+            name="draft[back]"
+            rows="3"
+            class="filing_tray__edit-input filing_tray__edit-input--back"
+          >{@form.params["back"]}</textarea>
+        </label>
+
+        <div class="filing_tray__draft-actions">
+          <button type="submit" class="action_pill action_pill--primary">
+            save
+          </button>
+          <button
+            type="button"
+            class="action_pill action_pill--bare"
+            phx-click="cancel_edit"
+            phx-value-id={@draft.id}
+            phx-target={@target}
+          >
+            cancel
+          </button>
+        </div>
+      </.form>
+    </.card>
     """
   end
 
@@ -253,7 +547,15 @@ defmodule ManillumWeb.FilingTrayComponent do
         >
           <.icon name="hero-archive-box-micro" /> file
         </button>
-        <.action_pill variant={:ghost}>edit</.action_pill>
+        <button
+          type="button"
+          class="action_pill action_pill--ghost"
+          phx-click="edit_draft"
+          phx-value-id={@draft.id}
+          phx-target={@target}
+        >
+          edit
+        </button>
         <button
           type="button"
           class="action_pill action_pill--bare"

@@ -782,6 +782,10 @@ defmodule ManillumWeb.ConversationsLive do
     {:noreply, put_flash(socket, :error, "Couldn't file that draft. Try again.")}
   end
 
+  def handle_info({:edit_save_failed, _id, message}, socket) do
+    {:noreply, put_flash(socket, :error, message)}
+  end
+
   defp assign_message_form(socket) do
     form =
       if socket.assigns.conversation do

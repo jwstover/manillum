@@ -337,6 +337,84 @@ defmodule Manillum.Archive.CardTest do
     end
   end
 
+  describe ":edit_content action" do
+    setup do
+      user = Ash.Seed.seed!(Manillum.Accounts.User, %{email: "edit_test@example.com"})
+
+      seed = fn slug, status ->
+        Ash.Seed.seed!(Card, %{
+          user_id: user.id,
+          drawer: :ANT,
+          date_token: "1177BC",
+          slug: slug,
+          card_type: :event,
+          front: "Original front",
+          back: "Original back",
+          status: status
+        })
+      end
+
+      {:ok, user: user, seed: seed}
+    end
+
+    test "updates front and back on a draft", %{seed: seed} do
+      card = seed.("EDIT-DRAFT", :draft)
+
+      assert {:ok, edited} =
+               card
+               |> Ash.Changeset.for_update(:edit_content, %{
+                 front: "New front",
+                 back: "New back"
+               })
+               |> Ash.update()
+
+      assert edited.front == "New front"
+      assert edited.back == "New back"
+      assert edited.status == :draft
+      assert edited.slug == "EDIT-DRAFT"
+    end
+
+    test "updates card_type and entities", %{seed: seed} do
+      card = seed.("EDIT-META", :draft)
+
+      assert {:ok, edited} =
+               card
+               |> Ash.Changeset.for_update(:edit_content, %{
+                 card_type: :concept,
+                 entities: ["Hannibal", "Rome"]
+               })
+               |> Ash.update()
+
+      assert edited.card_type == :concept
+      assert edited.entities == ["Hannibal", "Rome"]
+    end
+
+    test "leaves call-number segments untouched", %{seed: seed} do
+      card = seed.("EDIT-SEGS", :draft)
+
+      assert {:ok, edited} =
+               card
+               |> Ash.Changeset.for_update(:edit_content, %{front: "Updated"})
+               |> Ash.update()
+
+      assert edited.slug == "EDIT-SEGS"
+      assert edited.drawer == :ANT
+      assert edited.date_token == "1177BC"
+    end
+
+    test "works on a filed card too", %{seed: seed} do
+      card = seed.("EDIT-FILED", :filed)
+
+      assert {:ok, edited} =
+               card
+               |> Ash.Changeset.for_update(:edit_content, %{front: "Reworked"})
+               |> Ash.update()
+
+      assert edited.front == "Reworked"
+      assert edited.status == :filed
+    end
+  end
+
   describe ":discard action" do
     setup do
       user = Ash.Seed.seed!(Manillum.Accounts.User, %{email: "discard_test@example.com"})

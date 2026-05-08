@@ -162,6 +162,23 @@ defmodule Manillum.Archive.Card do
       change set_attribute(:status, :draft)
     end
 
+    update :edit_content do
+      description """
+      Edit the human-readable surface of a card — `front`, `back`,
+      `card_type`, and `entities`. The call-number identity (drawer,
+      date_token, slug) is unchanged; that goes through `:rename`
+      which writes a `CallNumberRedirect` for the old segments.
+
+      Acceptable on cards in any status — drafts are mutable in the
+      filing tray, filed cards are mutable from `FileCardLive`. No
+      status validation. Use `:rename` when call-number segments are
+      part of the same edit (the LiveView fires both actions).
+      """
+
+      accept [:front, :back, :card_type, :entities]
+      require_atomic? false
+    end
+
     update :rename do
       description """
       Change one or more of `drawer` / `date_token` / `slug`. Validates the

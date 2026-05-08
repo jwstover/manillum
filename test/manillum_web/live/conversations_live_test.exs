@@ -585,6 +585,173 @@ defmodule ManillumWeb.ConversationsLiveTest do
     end
   end
 
+  describe "inline edit on filing-tray drafts — Slice 10B / M-62" do
+    setup ctx do
+      user = make_user("edit_action_#{System.unique_integer([:positive])}@example.com")
+      conversation = make_conversation(user)
+      _message = make_message(conversation)
+      conn = log_in(ctx.conn, user)
+
+      {:ok, conn: conn, user: user, conversation: conversation}
+    end
+
+    test "edit pill swaps the read-only card for the edit form", ctx do
+      capture = seed_capture(ctx.user, ctx.conversation)
+      draft = seed_draft(ctx.user, capture, "EDIT-OPEN")
+
+      {:ok, view, _html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
+
+      view
+      |> element("article[id='drafts-#{draft.id}'] button[phx-click='edit_draft']")
+      |> render_click()
+
+      html = render(view)
+      assert html =~ "filing_tray__edit"
+      assert html =~ ~s(name="draft[slug]")
+      assert html =~ "EDIT-OPEN"
+      # `save` and `cancel` pills are present
+      assert html =~ ~s(phx-click="cancel_edit")
+      # The read-only "discard" pill is gone while in edit mode
+      refute html =~ ~r/article\[id='drafts-#{draft.id}'\].*phx-click="discard"/s
+    end
+
+    test "cancel reverts to the read-only draft", ctx do
+      capture = seed_capture(ctx.user, ctx.conversation)
+      draft = seed_draft(ctx.user, capture, "EDIT-CANCEL")
+
+      {:ok, view, _html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
+
+      view
+      |> element("article[id='drafts-#{draft.id}'] button[phx-click='edit_draft']")
+      |> render_click()
+
+      assert render(view) =~ "filing_tray__edit"
+
+      view
+      |> element("article[id='drafts-#{draft.id}'] button[phx-click='cancel_edit']")
+      |> render_click()
+
+      html = render(view)
+      refute html =~ "filing_tray__edit"
+      # Read-only view restored
+      assert html =~ "ANT · 1177BC · EDIT-CANCEL"
+    end
+
+    test "save with content-only change updates front + back, leaves call_number untouched",
+         ctx do
+      capture = seed_capture(ctx.user, ctx.conversation)
+      draft = seed_draft(ctx.user, capture, "EDIT-CONTENT")
+
+      {:ok, view, _html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
+
+      view
+      |> element("article[id='drafts-#{draft.id}'] button[phx-click='edit_draft']")
+      |> render_click()
+
+      view
+      |> form("article[id='drafts-#{draft.id}'] form", %{
+        "card_id" => draft.id,
+        "draft" => %{
+          "drawer" => "ANT",
+          "date_token" => "1177BC",
+          "slug" => "EDIT-CONTENT",
+          "front" => "Reworked front",
+          "back" => "Reworked back"
+        }
+      })
+      |> render_submit()
+
+      saved = Ash.get!(Manillum.Archive.Card, draft.id, authorize?: false)
+      assert saved.front == "Reworked front"
+      assert saved.back == "Reworked back"
+      assert saved.slug == "EDIT-CONTENT"
+      assert saved.drawer == :ANT
+      assert saved.date_token == "1177BC"
+
+      # Form is gone, read-only renders the new content
+      html = render(view)
+      refute html =~ "filing_tray__edit"
+      assert html =~ "Reworked front"
+    end
+
+    test "save with slug rename writes a CallNumberRedirect", ctx do
+      capture = seed_capture(ctx.user, ctx.conversation)
+      draft = seed_draft(ctx.user, capture, "OLD-SLUG")
+
+      {:ok, view, _html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
+
+      view
+      |> element("article[id='drafts-#{draft.id}'] button[phx-click='edit_draft']")
+      |> render_click()
+
+      view
+      |> form("article[id='drafts-#{draft.id}'] form", %{
+        "card_id" => draft.id,
+        "draft" => %{
+          "drawer" => "ANT",
+          "date_token" => "1177BC",
+          "slug" => "NEW-SLUG",
+          "front" => "front for OLD-SLUG",
+          "back" => "back for OLD-SLUG"
+        }
+      })
+      |> render_submit()
+
+      saved = Ash.get!(Manillum.Archive.Card, draft.id, authorize?: false)
+      assert saved.slug == "NEW-SLUG"
+
+      redirects =
+        Manillum.Archive.CallNumberRedirect
+        |> Ash.Query.filter(current_card_id == ^draft.id)
+        |> Ash.read!(authorize?: false)
+
+      assert length(redirects) == 1
+      assert hd(redirects).slug == "OLD-SLUG"
+    end
+
+    test "validate_edit surfaces a slug-collision warning when segments match an existing card",
+         ctx do
+      # Seed a filed card to collide against
+      _existing =
+        Ash.Seed.seed!(Manillum.Archive.Card, %{
+          user_id: ctx.user.id,
+          drawer: :ANT,
+          date_token: "1177BC",
+          slug: "TAKEN",
+          card_type: :event,
+          front: "F",
+          back: "B",
+          status: :filed
+        })
+
+      capture = seed_capture(ctx.user, ctx.conversation)
+      draft = seed_draft(ctx.user, capture, "EDIT-COLLIDE")
+
+      {:ok, view, _html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
+
+      view
+      |> element("article[id='drafts-#{draft.id}'] button[phx-click='edit_draft']")
+      |> render_click()
+
+      view
+      |> form("article[id='drafts-#{draft.id}'] form", %{
+        "card_id" => draft.id,
+        "draft" => %{
+          "drawer" => "ANT",
+          "date_token" => "1177BC",
+          "slug" => "TAKEN",
+          "front" => "front for EDIT-COLLIDE",
+          "back" => "back for EDIT-COLLIDE"
+        }
+      })
+      |> render_change()
+
+      html = render(view)
+      assert html =~ "filing_tray__edit-collision"
+      assert html =~ "collides with an existing filed card"
+    end
+  end
+
   # Fire the file_card event directly at the FilingTrayComponent. The
   # rendered click goes through the JS command pipeline (add_class /
   # remove_attribute / push) which is overkill for unit assertions
