@@ -78,6 +78,9 @@ defmodule ManillumWeb.Layouts do
   attr :flash, :map, required: true, doc: "the map of flash messages"
   attr :id, :string, default: "flash-group", doc: "the optional id of flash container"
 
+  slot :inner_block,
+    doc: "extra `<.flash>` siblings that should stack with the standard flashes"
+
   def flash_group(assigns) do
     ~H"""
     <div id={@id} class="toast_stack" aria-live="polite">
@@ -91,6 +94,7 @@ defmodule ManillumWeb.Layouts do
         kind={:error}
         kicker="● OFFLINE"
         title={gettext("We can't find the internet")}
+        auto_dismiss_ms={0}
         phx-disconnected={show(".phx-client-error #client-error") |> JS.remove_attribute("hidden")}
         phx-connected={hide("#client-error") |> JS.set_attribute({"hidden", ""})}
         hidden
@@ -104,6 +108,7 @@ defmodule ManillumWeb.Layouts do
         kind={:error}
         kicker="● ERROR"
         title={gettext("Something went wrong!")}
+        auto_dismiss_ms={0}
         phx-disconnected={show(".phx-server-error #server-error") |> JS.remove_attribute("hidden")}
         phx-connected={hide("#server-error") |> JS.set_attribute({"hidden", ""})}
         hidden
@@ -111,6 +116,8 @@ defmodule ManillumWeb.Layouts do
         {gettext("Attempting to reconnect")}
         <.icon name="hero-arrow-path" class="ml-1 size-3 motion-safe:animate-spin" />
       </.flash>
+
+      {render_slot(@inner_block)}
     </div>
     """
   end

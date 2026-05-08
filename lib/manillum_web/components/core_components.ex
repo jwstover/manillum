@@ -63,9 +63,21 @@ defmodule ManillumWeb.CoreComponents do
     values: [:info, :ok, :warn, :error],
     doc: "used for styling and flash lookup"
 
+  attr :auto_dismiss_ms, :integer,
+    default: 10_000,
+    doc: "auto-clear the flash after N milliseconds; pass 0 or nil to disable"
+
+  attr :show_progress, :boolean,
+    default: false,
+    doc: "render a thin progress rule that shrinks across `auto_dismiss_ms`"
+
   attr :rest, :global, doc: "the arbitrary HTML attributes to add to the flash container"
 
   slot :inner_block, doc: "the optional inner block that renders the flash message"
+
+  slot :actions,
+    doc:
+      "buttons rendered alongside the body (e.g. an `undo` action). Clicks on actions are NOT swallowed by the flash; only the × button dismisses."
 
   def flash(assigns) do
     payload = decode_flash(Phoenix.Flash.get(assigns.flash, assigns.kind))
@@ -75,6 +87,8 @@ defmodule ManillumWeb.CoreComponents do
     resolved_kicker =
       (payload && payload[:kicker]) || assigns.kicker || flash_kicker(resolved_kind)
 
+    auto_ms = assigns.auto_dismiss_ms
+
     assigns =
       assigns
       |> assign_new(:id, fn -> "flash-#{assigns.kind}" end)
@@ -83,14 +97,17 @@ defmodule ManillumWeb.CoreComponents do
       |> assign(:resolved_kicker, resolved_kicker)
       |> assign(:resolved_title, (payload && payload[:title]) || assigns.title)
       |> assign(:flash_body, payload && payload[:body])
+      |> assign(:auto_ms, auto_ms || 0)
 
     ~H"""
     <div
       :if={@payload || @inner_block != []}
       id={@id}
-      phx-click={JS.push("lv:clear-flash", value: %{key: @kind}) |> hide("##{@id}")}
       role="alert"
       class={["toast", "toast--#{@resolved_kind}"]}
+      phx-hook=".FlashAutoDismiss"
+      data-dismiss-key={@kind}
+      data-dismiss-after={@auto_ms}
       {@rest}
     >
       <div :if={@resolved_kicker} class="toast__kicker">{@resolved_kicker}</div>
@@ -102,6 +119,9 @@ defmodule ManillumWeb.CoreComponents do
           {render_slot(@inner_block)}
         <% end %>
       </div>
+      <div :if={@actions != []} class="toast__actions">
+        {render_slot(@actions)}
+      </div>
       <button
         type="button"
         class="toast__close"
@@ -110,6 +130,71 @@ defmodule ManillumWeb.CoreComponents do
       >
         ×
       </button>
+      <span
+        :if={@show_progress && @auto_ms > 0}
+        class="toast__progress"
+        style={"animation-duration: #{@auto_ms}ms"}
+        aria-hidden="true"
+      >
+      </span>
+      <script :type={Phoenix.LiveView.ColocatedHook} name=".FlashAutoDismiss">
+        // Auto-dismiss the flash after `data-dismiss-after` ms by pushing
+        // `lv:clear-flash` with the kind. Reads the timeout from a data
+        // attribute so callers can pass any duration (or 0 to disable).
+        // Cancels on element teardown so a navigation away doesn't push
+        // a stale event into the next LV. Pause-on-hover keeps a flash
+        // open while the user reads/considers an action button.
+        export default {
+          mounted() {
+            const ms = parseInt(this.el.dataset.dismissAfter || "0", 10);
+            if (!ms || ms <= 0) return;
+
+            this.kind = this.el.dataset.dismissKey;
+            this.remaining = ms;
+            this.start = null;
+            this.scheduleHide();
+
+            this.onEnter = () => this.pause();
+            this.onLeave = () => this.resume();
+            this.el.addEventListener("mouseenter", this.onEnter);
+            this.el.addEventListener("mouseleave", this.onLeave);
+            this.el.addEventListener("focusin", this.onEnter);
+            this.el.addEventListener("focusout", this.onLeave);
+          },
+
+          scheduleHide() {
+            this.start = performance.now();
+            this.timer = setTimeout(() => {
+              this.pushEvent("lv:clear-flash", { key: this.kind });
+              this.el.style.display = "none";
+            }, this.remaining);
+          },
+
+          pause() {
+            if (!this.timer) return;
+            clearTimeout(this.timer);
+            this.timer = null;
+            const elapsed = performance.now() - this.start;
+            this.remaining = Math.max(0, this.remaining - elapsed);
+          },
+
+          resume() {
+            if (this.timer) return;
+            if (this.remaining <= 0) return;
+            this.scheduleHide();
+          },
+
+          destroyed() {
+            if (this.timer) clearTimeout(this.timer);
+            if (this.onEnter) {
+              this.el.removeEventListener("mouseenter", this.onEnter);
+              this.el.removeEventListener("mouseleave", this.onLeave);
+              this.el.removeEventListener("focusin", this.onEnter);
+              this.el.removeEventListener("focusout", this.onLeave);
+            }
+          }
+        };
+      </script>
     </div>
     """
   end
