@@ -63,6 +63,28 @@ defmodule ManillumWeb.FilingTrayComponent do
      |> drop_in_flight(payload[:capture_id])}
   end
 
+  # Removes a filed draft from the stream after the file animation has
+  # played. Called by the parent LV via `send_update` after the
+  # ~1100ms keyframe completes. We delete by dom_id since the card row
+  # has already had its `status` flipped to `:filed` and is no longer
+  # in `:my_drafts`.
+  def update(%{action: {:remove_filed, dom_id}}, socket) do
+    {:ok,
+     socket
+     |> stream_delete_by_dom_id(:drafts, dom_id)
+     |> bump_count(-1)}
+  end
+
+  # Restore a card to the tray after `Archive.unfile_card` flipped its
+  # status back to `:draft`. The parent LV reads the card and forwards
+  # it here so the tray re-inserts it at the top.
+  def update(%{action: {:restore_draft, card}}, socket) do
+    {:ok,
+     socket
+     |> stream_insert(:drafts, card, at: 0)
+     |> bump_count(1)}
+  end
+
   def update(assigns, socket) do
     drafts = list_drafts(assigns.actor)
 
@@ -88,6 +110,38 @@ defmodule ManillumWeb.FilingTrayComponent do
        |> bump_count(-1)}
     else
       {:error, _} -> {:noreply, socket}
+    end
+  end
+
+  # File a draft. Per the 2026-05-07 decision (option B), the file action
+  # runs immediately and the undo path lives in the parent LV (10s grace
+  # window via `Card.:unfile`). The DOM transition (stamp impression →
+  # slide out) plays via the `.filing_tray__draft--filing` class added by
+  # `phx-click` on the client; the server fires
+  # `{:filed_card_for_undo, payload}` so the parent LV can render the
+  # undo toast and schedule the post-animation `stream_delete` back here.
+  def handle_event("file_card", %{"id" => id, "dom-id" => dom_id}, socket) do
+    actor = socket.assigns.actor
+
+    with {:ok, card} <- Ash.get(Card, id, actor: actor, load: [:call_number]),
+         {:ok, filed} <- Archive.file_card(card, actor: actor) do
+      send(
+        self(),
+        {:filed_card_for_undo,
+         %{card_id: filed.id, dom_id: dom_id, call_number: card.call_number}}
+      )
+
+      # Don't decrement `draft_count` yet — the article is still
+      # animating in the rail (FILED stamp + slide-out, ~1100ms). If we
+      # decrement now and this was the last draft, `tray_state` flips
+      # to `:empty` and the container CSS collapses to `display: none`,
+      # which clips the in-flight animation. Decrement when the stream
+      # item is actually removed (see `:remove_filed` clause).
+      {:noreply, socket}
+    else
+      {:error, _} ->
+        send(self(), {:file_card_failed, id})
+        {:noreply, socket}
     end
   end
 
@@ -170,7 +224,7 @@ defmodule ManillumWeb.FilingTrayComponent do
             class="filing_tray__draft"
             phx-remove={JS.transition("filing_tray__draft--discarding", time: 280)}
           >
-            <.draft_card draft={draft} target={@myself} />
+            <.draft_card draft={draft} dom_id={dom_id} target={@myself} />
           </article>
         </div>
       </.filing_tray>
@@ -179,6 +233,7 @@ defmodule ManillumWeb.FilingTrayComponent do
   end
 
   attr :draft, :map, required: true
+  attr :dom_id, :string, required: true
   attr :target, :any, required: true
 
   defp draft_card(assigns) do
@@ -191,9 +246,13 @@ defmodule ManillumWeb.FilingTrayComponent do
       <div class="filing_tray__draft-front">{@draft.front}</div>
       <div class="filing_tray__draft-back">{@draft.back}</div>
       <div class="filing_tray__draft-actions">
-        <.action_pill>
+        <button
+          type="button"
+          class="action_pill action_pill--primary"
+          phx-click={file_click(@dom_id, @draft.id, @target)}
+        >
           <.icon name="hero-archive-box-micro" /> file
-        </.action_pill>
+        </button>
         <.action_pill variant={:ghost}>edit</.action_pill>
         <button
           type="button"
@@ -207,6 +266,25 @@ defmodule ManillumWeb.FilingTrayComponent do
       </div>
     </.card>
     """
+  end
+
+  # Click handler for the file pill. Adds the `--filing` class to the
+  # parent article (which kicks off the FILED-stamp impression + slide-out
+  # CSS keyframes) and pushes the server `file_card` event with the
+  # draft id and dom_id. The server fires `Archive.file_card`, then bounces
+  # the post-animation removal back to the tray via the parent LV's
+  # `Process.send_after` cleanup.
+  defp file_click(dom_id, draft_id, target) do
+    # Strip the discard `phx-remove` so the eventual stream_delete (fired
+    # by the parent LV after the 1100ms file keyframes complete) doesn't
+    # rewind the article back to translateX(0) and replay the discard
+    # animation on top of the already-finished file slide-out.
+    JS.remove_attribute("phx-remove", to: "##{dom_id}")
+    |> JS.add_class("filing_tray__draft--filing", to: "##{dom_id}")
+    |> JS.push("file_card",
+      value: %{id: draft_id, "dom-id": dom_id},
+      target: target
+    )
   end
 
   defp list_drafts(actor) do

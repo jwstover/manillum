@@ -243,6 +243,75 @@
   pointer-events: none;
 }
 
+/* File exit animation — applied via JS.add_class on the file pill click
+ * (see `FilingTrayComponent.file_click/3`). Plays in three beats:
+ *   0–280ms   FILED stamp lands on the card with an overshoot, settles
+ *   280–700ms hold so the eye reads the stamp
+ *   700–1100ms slide off-rail to the right with a fade
+ * The article needs `position: relative` for the ::after stamp overlay
+ * to anchor against it. Pointer-events disabled so the user can't fire
+ * file again while the animation runs. The class is removed when the
+ * server `stream_delete`s the article (after 1100ms via the parent LV's
+ * `Process.send_after`). */
+.filing_tray__draft--filing {
+  position: relative;
+  animation: filing_tray_draft_file 1100ms ease-out forwards;
+  pointer-events: none;
+}
+
+@keyframes filing_tray_draft_file {
+  0% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  64% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(110%);
+    opacity: 0;
+  }
+}
+
+.filing_tray__draft--filing::after {
+  content: "FILED";
+  position: absolute;
+  top: 36%;
+  left: 50%;
+  z-index: 2;
+  font-family: var(--font-mono);
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: var(--tracking-mono-extra);
+  color: var(--color-oxblood);
+  border: 2px solid var(--color-oxblood);
+  padding: 0.25rem 0.625rem;
+  background: rgba(245, 240, 230, 0.92);
+  pointer-events: none;
+  animation: filing_tray_filed_stamp 1100ms ease-out forwards;
+  transform-origin: center;
+}
+
+@keyframes filing_tray_filed_stamp {
+  0% {
+    transform: translate(-50%, -50%) rotate(-8deg) scale(0);
+    opacity: 0;
+  }
+  14% {
+    transform: translate(-50%, -50%) rotate(-8deg) scale(1.35);
+    opacity: 1;
+  }
+  26% {
+    transform: translate(-50%, -50%) rotate(-8deg) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -50%) rotate(-8deg) scale(1);
+    opacity: 1;
+  }
+}
+
 .filing_tray__draft-head {
   display: flex;
   justify-content: space-between;

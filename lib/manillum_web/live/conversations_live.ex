@@ -13,7 +13,20 @@ defmodule ManillumWeb.ConversationsLive do
   def render(assigns) do
     ~H"""
     <div class="conversation">
-      <ManillumWeb.Layouts.flash_group flash={@flash} />
+      <ManillumWeb.Layouts.flash_group flash={@flash}>
+        <ManillumWeb.CoreComponents.flash
+          :if={@undo_state}
+          id="undo-toast"
+          kind={:ok}
+          kicker="● FILED"
+          title={@undo_state.call_number}
+          show_progress={true}
+        >
+          <:actions>
+            <button type="button" phx-click="undo_file">undo</button>
+          </:actions>
+        </ManillumWeb.CoreComponents.flash>
+      </ManillumWeb.Layouts.flash_group>
       <.topbar active="conversations">
         <:tab id="today" href={~p"/"}>Today</:tab>
         <:tab id="conversations" href={~p"/conversations"}>Conversations</:tab>
@@ -408,6 +421,7 @@ defmodule ManillumWeb.ConversationsLive do
       |> assign(:exchange_count, 0)
       |> assign(:message_form, nil)
       |> assign(:mentions, [])
+      |> assign(:undo_state, nil)
       |> stream_configure(:messages, dom_id: &"message-#{&1.id}")
 
     {:ok, socket}
@@ -549,6 +563,43 @@ defmodule ManillumWeb.ConversationsLive do
     end
   end
 
+  # Undo a recent file action — calls `Archive.unfile_card/2` and pushes
+  # the now-back-to-:draft card to the filing tray. Window enforced
+  # by the parent's `:undo_state` assign (cleared after 10s by
+  # `{:undo_expire, id}` from `handle_info`).
+  def handle_event("undo_file", _params, socket) do
+    user = socket.assigns.current_user
+
+    case socket.assigns.undo_state do
+      %{card_id: id} when not is_nil(user) ->
+        with {:ok, card} <-
+               Ash.get(Manillum.Archive.Card, id, actor: user, load: [:call_number]),
+             {:ok, drafted} <- Manillum.Archive.unfile_card(card, actor: user) do
+          # Reload to get the freshly-loaded :call_number calc on the
+          # demoted card before handing it to the tray.
+          drafted = Ash.load!(drafted, [:capture, :call_number], actor: user)
+
+          send_update(ManillumWeb.FilingTrayComponent,
+            id: "filing-tray",
+            action: {:restore_draft, drafted}
+          )
+
+          {:noreply, assign(socket, :undo_state, nil)}
+        else
+          {:error, err} ->
+            Logger.error("[undo_file] failed id=#{id} error=#{inspect(err)}")
+
+            {:noreply,
+             socket
+             |> assign(:undo_state, nil)
+             |> put_flash(:error, "Couldn't undo. The card is filed.")}
+        end
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
   defp build_capture_attrs(%{"scope" => scope} = params, user) do
     message_id = params["message_id"] || params["message-id"]
     conversation_id = params["conversation_id"] || params["conversation-id"]
@@ -672,6 +723,63 @@ defmodule ManillumWeb.ConversationsLive do
 
     send_update(ManillumWeb.FilingTrayComponent, id: "filing-tray", action: msg)
     {:noreply, socket}
+  end
+
+  # File-action lifecycle (Slice 10B / M-28). Decision 2026-05-07 option B:
+  # `Card.:file` runs immediately; the undo path lives here in the parent LV
+  # with a 10-second grace window, after which the action becomes irreversible.
+  #
+  # Sequence:
+  #   1. tray's `handle_event("file_card", ...)` calls `Archive.file_card/2`
+  #      and sends us `{:filed_card_for_undo, payload}`.
+  #   2. We schedule `{:remove_filed_dom, dom_id}` 1100ms out so the
+  #      tray's stamp-impression + slide-out keyframes can complete before
+  #      `stream_delete` removes the article.
+  #   3. We schedule `{:undo_expire, card_id}` 10s out and assign
+  #      `:undo_state` so the undo toast renders.
+  #   4. Click "undo" → `handle_event("undo_file", ...)` → `Archive.unfile_card/2`
+  #      → restore the card to the tray via `send_update`.
+  def handle_info({:filed_card_for_undo, payload}, socket) do
+    %{card_id: id, dom_id: dom_id, call_number: cn} = payload
+
+    Process.send_after(self(), {:remove_filed_dom, dom_id, id}, 1100)
+    Process.send_after(self(), {:undo_expire, id}, 10_000)
+
+    {:noreply, assign(socket, :undo_state, %{card_id: id, call_number: cn})}
+  end
+
+  def handle_info({:remove_filed_dom, dom_id, card_id}, socket) do
+    # If the user undid the file action within the 1100ms animation
+    # window, the card is back to `:draft` and re-inserted into the
+    # tray. Don't remove it from the tray in that case — the user
+    # changed their mind. We confirm by reading the persisted status
+    # rather than introspecting in-memory undo_state, since the undo
+    # path may have already cleared it.
+    actor = socket.assigns.current_user
+
+    case actor && Ash.get(Manillum.Archive.Card, card_id, actor: actor) do
+      {:ok, %{status: :filed}} ->
+        send_update(ManillumWeb.FilingTrayComponent,
+          id: "filing-tray",
+          action: {:remove_filed, dom_id}
+        )
+
+      _ ->
+        :noop
+    end
+
+    {:noreply, socket}
+  end
+
+  def handle_info({:undo_expire, card_id}, socket) do
+    case socket.assigns.undo_state do
+      %{card_id: ^card_id} -> {:noreply, assign(socket, :undo_state, nil)}
+      _ -> {:noreply, socket}
+    end
+  end
+
+  def handle_info({:file_card_failed, _id}, socket) do
+    {:noreply, put_flash(socket, :error, "Couldn't file that draft. Try again.")}
   end
 
   defp assign_message_form(socket) do

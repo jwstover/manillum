@@ -161,7 +161,8 @@ defmodule ManillumWeb.ConversationsLiveTest do
       {:ok, _view, html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
 
       assert html =~ "+ FILE ALL"
-      assert html =~ "message__file_all_btn"
+      assert html =~ ~s(phx-click="file")
+      assert html =~ ~s(phx-value-scope="whole")
     end
 
     test "does not render + FILE ALL on user messages", ctx do
@@ -202,7 +203,7 @@ defmodule ManillumWeb.ConversationsLiveTest do
 
       html =
         view
-        |> element("button.message__file_all_btn")
+        |> element(~s(button.action_pill[phx-click="file"][phx-value-scope="whole"]))
         |> render_click()
 
       assert html =~ "Filing — drafts will appear shortly"
@@ -443,6 +444,155 @@ defmodule ManillumWeb.ConversationsLiveTest do
       assert {:error, %Ash.Error.Invalid{errors: [%Ash.Error.Query.NotFound{}]}} =
                Ash.get(Manillum.Archive.Card, draft.id, authorize?: false)
     end
+  end
+
+  describe "file action — Slice 10B / M-28" do
+    setup ctx do
+      user = make_user("file_action_#{System.unique_integer([:positive])}@example.com")
+      conversation = make_conversation(user)
+      _message = make_message(conversation)
+      conn = log_in(ctx.conn, user)
+
+      {:ok, conn: conn, user: user, conversation: conversation}
+    end
+
+    test "file flips the card status to :filed and surfaces the undo toast", ctx do
+      capture = seed_capture(ctx.user, ctx.conversation)
+      draft = seed_draft(ctx.user, capture, "OMEGA")
+
+      {:ok, view, _html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
+
+      send_file_card(view, draft.id)
+      _ = :sys.get_state(view.pid)
+
+      filed = Ash.get!(Manillum.Archive.Card, draft.id, authorize?: false)
+      assert filed.status == :filed
+
+      html = render(view)
+      assert html =~ "id=\"undo-toast\""
+      assert html =~ "ANT · 1177BC · OMEGA"
+      assert html =~ ~s(phx-click="undo_file")
+    end
+
+    test "post-animation send_update removes the filed draft from the tray", ctx do
+      capture = seed_capture(ctx.user, ctx.conversation)
+      draft = seed_draft(ctx.user, capture, "OMEGA-REM")
+
+      {:ok, view, _html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
+      assert render(view) =~ "ANT · 1177BC · OMEGA-REM"
+
+      send_file_card(view, draft.id)
+      _ = render(view)
+
+      send(view.pid, {:remove_filed_dom, "drafts-#{draft.id}", draft.id})
+      # Two syncs: first drains the explicit message (which triggers
+      # send_update — itself a self-send); second drains the
+      # send_update message so the component's stream_delete actually
+      # runs before render snapshots.
+      _ = :sys.get_state(view.pid)
+      _ = :sys.get_state(view.pid)
+
+      html = render(view)
+
+      # Article is gone from the tray (the undo toast still shows the
+      # filed call_number — that's expected, so don't `refute` on the
+      # call_number string itself).
+      refute html =~ ~s(id="drafts-#{draft.id}")
+    end
+
+    test "undo_file flips the card back to :draft and restores it to the tray", ctx do
+      capture = seed_capture(ctx.user, ctx.conversation)
+      draft = seed_draft(ctx.user, capture, "OMEGA-UNDO")
+
+      {:ok, view, _html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
+
+      send_file_card(view, draft.id)
+      send(view.pid, {:remove_filed_dom, "drafts-#{draft.id}", draft.id})
+      _ = :sys.get_state(view.pid)
+
+      view |> element("#undo-toast .toast__actions button") |> render_click()
+      _ = :sys.get_state(view.pid)
+
+      restored = Ash.get!(Manillum.Archive.Card, draft.id, authorize?: false)
+      assert restored.status == :draft
+
+      html = render(view)
+      refute html =~ "id=\"undo-toast\""
+      assert html =~ "ANT · 1177BC · OMEGA-UNDO"
+    end
+
+    test "undo_expire clears the undo toast without changing card status", ctx do
+      capture = seed_capture(ctx.user, ctx.conversation)
+      draft = seed_draft(ctx.user, capture, "OMEGA-EXP")
+
+      {:ok, view, _html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
+
+      send_file_card(view, draft.id)
+      _ = :sys.get_state(view.pid)
+      assert render(view) =~ "id=\"undo-toast\""
+
+      send(view.pid, {:undo_expire, draft.id})
+      _ = :sys.get_state(view.pid)
+
+      html = render(view)
+      refute html =~ "id=\"undo-toast\""
+
+      filed = Ash.get!(Manillum.Archive.Card, draft.id, authorize?: false)
+      assert filed.status == :filed
+    end
+
+    test "scheduled :remove_filed_dom is a no-op once the card is unfiled", ctx do
+      capture = seed_capture(ctx.user, ctx.conversation)
+      draft = seed_draft(ctx.user, capture, "OMEGA-RACE")
+
+      {:ok, view, _html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
+
+      send_file_card(view, draft.id)
+      _ = :sys.get_state(view.pid)
+
+      view |> element("#undo-toast .toast__actions button") |> render_click()
+      _ = :sys.get_state(view.pid)
+
+      # The card is now back to :draft. The 1100ms `:remove_filed_dom`
+      # is still in the parent's mailbox (would normally fire after the
+      # animation). When it does fire, it must check status and skip
+      # removing — otherwise the just-restored draft vanishes.
+      send(view.pid, {:remove_filed_dom, "drafts-#{draft.id}", draft.id})
+      _ = :sys.get_state(view.pid)
+      _ = :sys.get_state(view.pid)
+
+      html = render(view)
+      assert html =~ ~s(id="drafts-#{draft.id}")
+      assert html =~ "ANT · 1177BC · OMEGA-RACE"
+    end
+
+    test "the file pill carries phx-click directives that strip phx-remove", ctx do
+      capture = seed_capture(ctx.user, ctx.conversation)
+      draft = seed_draft(ctx.user, capture, "OMEGA-DOM")
+
+      {:ok, _view, html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
+
+      # The file pill must (a) push the file_card event and (b) strip
+      # the article's phx-remove so the eventual stream_delete doesn't
+      # rewind the article and replay the discard animation on top.
+      # JSON-encoded JS commands surface as `remove_attr` / `add_class` /
+      # `push` in the rendered phx-click attribute.
+      assert html =~ "file_card"
+      assert html =~ "remove_attr"
+      assert html =~ "filing_tray__draft--filing"
+
+      _ = draft
+    end
+  end
+
+  # Fire the file_card event directly at the FilingTrayComponent. The
+  # rendered click goes through the JS command pipeline (add_class /
+  # remove_attribute / push) which is overkill for unit assertions
+  # since we care about server-side state changes.
+  defp send_file_card(view, draft_id) do
+    view
+    |> element("article[id='drafts-#{draft_id}'] .action_pill--primary")
+    |> render_click()
   end
 
   defp seed_capture(user, conversation) do
