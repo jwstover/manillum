@@ -356,6 +356,84 @@
   border-top: 1px dotted var(--color-rule);
 }
 
+/* Duplicate-candidate block (M-65). Soft brass-italic — advisory,
+ * not blocking. Lists candidate cards by call_number; clicking one
+ * expands an inline preview of its front + back so the user can
+ * compare without leaving the rail. The file pill stays enabled —
+ * dup-detection is "this looks similar," not "this collides."
+ *
+ * Visually distinct from `.filing_tray__draft-collision` (which has
+ * a solid brass border and blocks the file pill): no border, italic
+ * copy, only the candidate's call_number is interactive. */
+.filing_tray__draft-dups {
+  margin-top: 0.5rem;
+  padding-top: 0.375rem;
+  border-top: 1px dotted var(--color-rule);
+  font-family: var(--font-body);
+  font-style: italic;
+  font-size: 0.71875rem;
+  color: var(--color-ink-soft);
+  line-height: 1.4;
+}
+
+.filing_tray__draft-dups-head {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--color-brass);
+  margin-bottom: 0.25rem;
+}
+
+.filing_tray__draft-dups-head [class^="hero-"] {
+  width: 0.75rem;
+  height: 0.75rem;
+  color: var(--color-brass-bright);
+}
+
+.filing_tray__draft-dups-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.filing_tray__draft-dup-toggle {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.filing_tray__draft-dup-toggle:hover .call_number {
+  color: var(--color-oxblood);
+}
+
+.filing_tray__draft-dup-preview {
+  margin: 0.25rem 0 0.125rem 0.5rem;
+  padding: 0.25rem 0 0.25rem 0.5rem;
+  border-left: 1px dotted var(--color-brass);
+  font-style: normal;
+  color: var(--color-ink);
+}
+
+.filing_tray__draft-dup-front {
+  font-family: var(--font-display);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  margin-bottom: 0.1875rem;
+}
+
+.filing_tray__draft-dup-back {
+  font-family: var(--font-body);
+  font-style: italic;
+  font-size: 0.71875rem;
+  color: var(--color-ink-soft);
+}
+
 /* Slug-collision banner (M-64). Brass-toned because the cataloging
  * pipeline already detected the collision against a filed card; the
  * file pill is hidden until the user resolves it (edit slug or

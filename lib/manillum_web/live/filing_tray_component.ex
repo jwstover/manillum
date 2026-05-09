@@ -34,6 +34,8 @@ defmodule ManillumWeb.FilingTrayComponent do
   alias Manillum.Archive.Card
   alias Phoenix.LiveView.JS
 
+  require Ash.Query
+
   @impl true
   def update(%{action: {:capture_submitted, %{capture_id: capture_id}}}, socket) do
     {:ok, track_in_flight(socket, capture_id)}
@@ -87,16 +89,19 @@ defmodule ManillumWeb.FilingTrayComponent do
 
   def update(assigns, socket) do
     drafts = list_drafts(assigns.actor)
+    candidate_cards = load_candidate_cards(drafts, assigns.actor)
 
     {:ok,
      socket
      |> assign(assigns)
      |> assign(:draft_count, length(drafts))
+     |> assign(:candidate_cards, candidate_cards)
      |> assign_new(:failure, fn -> nil end)
      |> assign_new(:dismissed, fn -> false end)
      |> assign_new(:in_flight, fn -> MapSet.new() end)
      |> assign_new(:editing, fn -> %{} end)
      |> assign_new(:collisions, fn -> %{} end)
+     |> assign_new(:expanded_candidates, fn -> MapSet.new() end)
      |> stream(:drafts, drafts)}
   end
 
@@ -157,6 +162,48 @@ defmodule ManillumWeb.FilingTrayComponent do
 
   def handle_event("dismiss_failure", _params, socket) do
     {:noreply, assign(socket, :failure, nil)}
+  end
+
+  # Toggles the inline preview of a duplicate-candidate card on a
+  # draft. The expanded set is keyed by `{draft_id, candidate_id}` so
+  # each candidate per draft expands independently. Lazy-loads the
+  # candidate's `:front` and `:back` if not already cached.
+  def handle_event(
+        "toggle_dup_candidate",
+        %{"draft-id" => draft_id, "candidate-id" => candidate_id},
+        socket
+      ) do
+    key = {draft_id, candidate_id}
+    expanded = socket.assigns.expanded_candidates
+
+    expanded =
+      if MapSet.member?(expanded, key) do
+        MapSet.delete(expanded, key)
+      else
+        MapSet.put(expanded, key)
+      end
+
+    socket = assign(socket, :expanded_candidates, expanded)
+
+    # Re-insert the draft so the article re-renders with the new
+    # expanded state — stream items are otherwise write-only and don't
+    # pick up assign changes from outside.
+    actor = socket.assigns.actor
+
+    socket =
+      case Ash.get(Card, draft_id,
+             actor: actor,
+             load: [
+               :call_number,
+               capture: [:conversation, :message],
+               collision_card: [:call_number]
+             ]
+           ) do
+        {:ok, card} -> stream_insert(socket, :drafts, card)
+        _ -> socket
+      end
+
+    {:noreply, socket}
   end
 
   # Bulk file action — fires `Archive.file_card/2` for every draft
@@ -532,7 +579,13 @@ defmodule ManillumWeb.FilingTrayComponent do
           >
             <%= case Map.get(@editing, draft.id) do %>
               <% nil -> %>
-                <.draft_card draft={draft} dom_id={dom_id} target={@myself} />
+                <.draft_card
+                  draft={draft}
+                  dom_id={dom_id}
+                  target={@myself}
+                  candidate_cards={@candidate_cards}
+                  expanded_candidates={@expanded_candidates}
+                />
               <% form -> %>
                 <.edit_card
                   draft={draft}
@@ -683,6 +736,8 @@ defmodule ManillumWeb.FilingTrayComponent do
   attr :draft, :map, required: true
   attr :dom_id, :string, required: true
   attr :target, :any, required: true
+  attr :candidate_cards, :map, default: %{}
+  attr :expanded_candidates, :any, default: nil
 
   defp draft_card(assigns) do
     ~H"""
@@ -727,6 +782,40 @@ defmodule ManillumWeb.FilingTrayComponent do
 
       <div class="filing_tray__draft-front">{@draft.front}</div>
       <div class="filing_tray__draft-back">{@draft.back}</div>
+
+      <div
+        :if={dup_candidates(@draft, @candidate_cards) != []}
+        class="filing_tray__draft-dups"
+      >
+        <div class="filing_tray__draft-dups-head">
+          <.icon name="hero-document-duplicate-micro" /> looks similar to:
+        </div>
+        <ul class="filing_tray__draft-dups-list">
+          <li
+            :for={candidate <- dup_candidates(@draft, @candidate_cards)}
+            class="filing_tray__draft-dup"
+          >
+            <button
+              type="button"
+              class="filing_tray__draft-dup-toggle"
+              phx-click="toggle_dup_candidate"
+              phx-value-draft-id={@draft.id}
+              phx-value-candidate-id={candidate.id}
+              phx-target={@target}
+            >
+              <.call_number inline tone={:brass}>{candidate.call_number}</.call_number>
+            </button>
+            <div
+              :if={dup_expanded?(@expanded_candidates, @draft.id, candidate.id)}
+              class="filing_tray__draft-dup-preview"
+            >
+              <div class="filing_tray__draft-dup-front">{candidate.front}</div>
+              <div class="filing_tray__draft-dup-back">{candidate.back}</div>
+            </div>
+          </li>
+        </ul>
+      </div>
+
       <div :if={!collision_card(@draft)} class="filing_tray__draft-actions">
         <button
           type="button"
@@ -764,6 +853,26 @@ defmodule ManillumWeb.FilingTrayComponent do
   # explicitly loaded (older code paths) by treating it as `nil`.
   defp collision_card(%{collision_card: %Card{} = c}), do: c
   defp collision_card(_), do: nil
+
+  # Resolves the loaded candidate cards for a draft from the
+  # `candidate_cards` map (keyed by card id). Preserves the draft's
+  # original `duplicate_candidate_ids` order. Drops any ids that
+  # didn't load (the user may have already discarded one of the
+  # candidate cards between cataloging and now).
+  defp dup_candidates(%{duplicate_candidate_ids: ids}, candidate_cards)
+       when is_list(ids) and is_map(candidate_cards) do
+    ids
+    |> Enum.map(&Map.get(candidate_cards, &1))
+    |> Enum.reject(&is_nil/1)
+  end
+
+  defp dup_candidates(_, _), do: []
+
+  defp dup_expanded?(nil, _draft_id, _candidate_id), do: false
+
+  defp dup_expanded?(expanded, draft_id, candidate_id) do
+    MapSet.member?(expanded, {draft_id, candidate_id})
+  end
 
   # Returns the QRY № N · ¶ M provenance line for a draft, or nil if
   # the draft has no associated capture / conversation. `:whole` scope
@@ -833,6 +942,30 @@ defmodule ManillumWeb.FilingTrayComponent do
 
   defp list_drafts(actor) do
     Archive.list_drafts!(actor: actor)
+  end
+
+  # Batch-loads the candidate cards referenced by every draft's
+  # `duplicate_candidate_ids`. Returns a `%{card_id => Card}` map keyed
+  # by candidate id so the renderer can resolve in O(1). Single query
+  # over the whole tray's union of candidate ids — avoids N+1 fetches
+  # at render time.
+  defp load_candidate_cards(drafts, actor) do
+    ids =
+      drafts
+      |> Enum.flat_map(fn d -> d.duplicate_candidate_ids || [] end)
+      |> Enum.uniq()
+
+    case ids do
+      [] ->
+        %{}
+
+      ids ->
+        Card
+        |> Ash.Query.filter(id in ^ids)
+        |> Ash.Query.load([:call_number])
+        |> Ash.read!(actor: actor)
+        |> Map.new(&{&1.id, &1})
+    end
   end
 
   # State-resolution: failure dominates (review state shows the banner +

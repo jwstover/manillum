@@ -585,6 +585,163 @@ defmodule ManillumWeb.ConversationsLiveTest do
     end
   end
 
+  describe "duplicate-resolution UI — Slice 10B / M-65" do
+    setup ctx do
+      user = make_user("dup_#{System.unique_integer([:positive])}@example.com")
+      conversation = make_conversation(user)
+      _message = make_message(conversation)
+      conn = log_in(ctx.conn, user)
+
+      {:ok, conn: conn, user: user, conversation: conversation}
+    end
+
+    test "renders candidate list when duplicate_candidate_ids is non-empty", ctx do
+      candidate1 =
+        Ash.Seed.seed!(Manillum.Archive.Card, %{
+          user_id: ctx.user.id,
+          drawer: :CLA,
+          date_token: "44BC",
+          slug: "CAESAR-DEATH",
+          card_type: :event,
+          front: "When was Caesar assassinated?",
+          back: "On the Ides of March, 44 BC.",
+          status: :filed
+        })
+
+      candidate2 =
+        Ash.Seed.seed!(Manillum.Archive.Card, %{
+          user_id: ctx.user.id,
+          drawer: :CLA,
+          date_token: "44BC",
+          slug: "IDES-OF-MARCH",
+          card_type: :event,
+          front: "What is the significance of the Ides of March?",
+          back: "March 15, 44 BC — date of Caesar's assassination.",
+          status: :filed
+        })
+
+      capture = seed_capture(ctx.user, ctx.conversation)
+
+      _draft =
+        Ash.Seed.seed!(Manillum.Archive.Card, %{
+          user_id: ctx.user.id,
+          capture_id: capture.id,
+          drawer: :CLA,
+          date_token: "44BC",
+          slug: "DUP-DRAFT",
+          card_type: :event,
+          front: "Caesar's death?",
+          back: "Stabbed in the senate.",
+          status: :draft,
+          duplicate_candidate_ids: [candidate1.id, candidate2.id]
+        })
+
+      {:ok, _view, html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
+
+      assert html =~ "filing_tray__draft-dups"
+      assert html =~ "looks similar to"
+      assert html =~ "CLA · 44BC · CAESAR-DEATH"
+      assert html =~ "CLA · 44BC · IDES-OF-MARCH"
+
+      # Previews not expanded by default
+      refute html =~ "On the Ides of March, 44 BC."
+    end
+
+    test "draft without duplicates renders no dup block", ctx do
+      capture = seed_capture(ctx.user, ctx.conversation)
+      _draft = seed_draft(ctx.user, capture, "NO-DUP-DRAFT")
+
+      {:ok, _view, html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
+
+      refute html =~ "filing_tray__draft-dups"
+      refute html =~ "looks similar to"
+    end
+
+    test "clicking a candidate expands its preview; clicking again collapses", ctx do
+      candidate =
+        Ash.Seed.seed!(Manillum.Archive.Card, %{
+          user_id: ctx.user.id,
+          drawer: :CLA,
+          date_token: "44BC",
+          slug: "CAESAR-DEATH",
+          card_type: :event,
+          front: "When was Caesar assassinated?",
+          back: "On the Ides of March, 44 BC.",
+          status: :filed
+        })
+
+      capture = seed_capture(ctx.user, ctx.conversation)
+
+      draft =
+        Ash.Seed.seed!(Manillum.Archive.Card, %{
+          user_id: ctx.user.id,
+          capture_id: capture.id,
+          drawer: :CLA,
+          date_token: "44BC",
+          slug: "TOGGLE-DRAFT",
+          card_type: :event,
+          front: "F",
+          back: "B",
+          status: :draft,
+          duplicate_candidate_ids: [candidate.id]
+        })
+
+      {:ok, view, _html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
+
+      view
+      |> element("article[id='drafts-#{draft.id}'] .filing_tray__draft-dup-toggle")
+      |> render_click()
+
+      html = render(view)
+      assert html =~ "filing_tray__draft-dup-preview"
+      assert html =~ "On the Ides of March, 44 BC."
+
+      view
+      |> element("article[id='drafts-#{draft.id}'] .filing_tray__draft-dup-toggle")
+      |> render_click()
+
+      html = render(view)
+      refute html =~ "filing_tray__draft-dup-preview"
+    end
+
+    test "the file pill remains enabled on drafts with dups (no collision)", ctx do
+      candidate =
+        Ash.Seed.seed!(Manillum.Archive.Card, %{
+          user_id: ctx.user.id,
+          drawer: :CLA,
+          date_token: "44BC",
+          slug: "CAESAR-DEATH",
+          card_type: :event,
+          front: "F",
+          back: "B",
+          status: :filed
+        })
+
+      capture = seed_capture(ctx.user, ctx.conversation)
+
+      draft =
+        Ash.Seed.seed!(Manillum.Archive.Card, %{
+          user_id: ctx.user.id,
+          capture_id: capture.id,
+          drawer: :CLA,
+          date_token: "44BC",
+          slug: "FILE-ANYWAY-DRAFT",
+          card_type: :event,
+          front: "F",
+          back: "B",
+          status: :draft,
+          duplicate_candidate_ids: [candidate.id]
+        })
+
+      {:ok, view, _html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
+
+      assert has_element?(
+               view,
+               "article[id='drafts-#{draft.id}'] .action_pill--primary"
+             )
+    end
+  end
+
   describe "provenance label — Slice 10B / M-66" do
     setup ctx do
       user = make_user("provenance_#{System.unique_integer([:positive])}@example.com")
