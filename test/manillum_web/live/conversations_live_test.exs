@@ -792,24 +792,28 @@ defmodule ManillumWeb.ConversationsLiveTest do
       assert html =~ "QRY № 0089 · ¶ 2"
     end
 
-    test "draft from a deleted conversation falls back gracefully", ctx do
+    test "draft with no conversation_id renders no provenance line", ctx do
+      # Conversations are now FK-constrained as of M-66's belongs_to
+      # additions — orphan conversation_ids on captures are impossible.
+      # The graceful-fallback path still triggers when a capture has
+      # no conversation_id at all (e.g. a future manually-composed
+      # card path per M-37 — `Card.capture_id IS NULL`, but if the
+      # capture exists with a nil conversation, the label hides).
       capture =
         Ash.Seed.seed!(Capture, %{
           user_id: ctx.user.id,
           source_text: "x",
           scope: :whole,
           status: :catalogued,
-          conversation_id: Ecto.UUID.generate(),
-          message_id: Ecto.UUID.generate()
+          conversation_id: nil,
+          message_id: nil
         })
 
       _draft = seed_draft(ctx.user, capture, "ORPHAN-PROV")
 
       {:ok, _view, html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
 
-      # No provenance line rendered (conversation can't be loaded)
       refute html =~ "filing_tray__draft-provenance"
-      # Draft itself still rendered
       assert html =~ "ANT · 1177BC · ORPHAN-PROV"
     end
   end
@@ -1337,7 +1341,7 @@ defmodule ManillumWeb.ConversationsLiveTest do
       scope: :whole,
       status: :catalogued,
       conversation_id: conversation.id,
-      message_id: Ecto.UUID.generate()
+      message_id: nil
     })
   end
 

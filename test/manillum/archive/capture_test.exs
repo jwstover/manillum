@@ -157,13 +157,29 @@ defmodule Manillum.Archive.CaptureTest do
     setup do
       user = make_user("catalog_test@example.com")
 
+      conversation =
+        Ash.Seed.seed!(Manillum.Conversations.Conversation, %{
+          user_id: user.id,
+          query_number: 1,
+          title: "Catalog test conversation"
+        })
+
+      message =
+        Ash.Seed.seed!(Manillum.Conversations.Message, %{
+          conversation_id: conversation.id,
+          role: :assistant,
+          content: "Catalog test seed message",
+          complete: true
+        })
+
       {:ok, capture} =
         Archive.submit(%{
           user_id: user.id,
           source_text:
             "Between 1200 and 1150 BCE, the Bronze Age palace economies collapsed across the eastern Mediterranean.",
           scope: :whole,
-          conversation_id: Ash.UUID.generate()
+          conversation_id: conversation.id,
+          message_id: message.id
         })
 
       {:ok, user: user, capture: capture}

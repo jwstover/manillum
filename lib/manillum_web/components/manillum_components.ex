@@ -750,6 +750,9 @@ defmodule ManillumWeb.ManillumComponents do
   attr :affordances, :list, default: []
   attr :back_href, :string, default: "/"
 
+  slot :cta,
+    doc: "optional pill / link rendered between the affordance list and the back-link"
+
   def stub_page(assigns) do
     ~H"""
     <main class="stub-page">
@@ -763,6 +766,10 @@ defmodule ManillumWeb.ManillumComponents do
       <ul :if={@affordances != []} class="stub-page__affordances">
         <li :for={affordance <- @affordances}>{affordance}</li>
       </ul>
+
+      <div :if={@cta != []} class="stub-page__cta">
+        {render_slot(@cta)}
+      </div>
 
       <a class="stub-page__back" href={@back_href}>← back to today</a>
     </main>

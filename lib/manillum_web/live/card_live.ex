@@ -27,10 +27,18 @@ defmodule ManillumWeb.CardLive do
           "Recto / verso card render at signature size.",
           "Call number, drawer label, tags, and entities visible.",
           "“See also” cross-links to related cards (Stream B).",
-          "Provenance link back to the source conversation/message.",
-          "Edit, rename (creates a redirect), and review-history actions."
+          "Provenance link back to the source conversation/message."
         ]}
-      />
+      >
+        <:cta>
+          <.link
+            navigate={~p"/cards/#{@card_id}/edit"}
+            class="action_pill action_pill--ghost"
+          >
+            edit this card →
+          </.link>
+        </:cta>
+      </.stub_page>
     </Layouts.app>
     """
   end
