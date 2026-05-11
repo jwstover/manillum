@@ -29,6 +29,7 @@ defmodule ManillumWeb.FilingTrayComponent do
   use ManillumWeb, :live_component
 
   import ManillumWeb.ManillumComponents
+  import ManillumWeb.CardHelpers
 
   alias Manillum.Archive
   alias Manillum.Archive.Card
@@ -91,6 +92,11 @@ defmodule ManillumWeb.FilingTrayComponent do
     drafts = list_drafts(assigns.actor)
     candidate_cards = load_candidate_cards(drafts, assigns.actor)
 
+    # `reset: true` so non-action `send_update`s (initial mount + any
+    # parent re-render that doesn't carry an `:action` key) replace the
+    # stream wholesale rather than re-inserting on top of existing
+    # items. Without it the client-side de-dupe hides the visual bug,
+    # but every render sends the full draft list across the wire.
     {:ok,
      socket
      |> assign(assigns)
@@ -102,7 +108,7 @@ defmodule ManillumWeb.FilingTrayComponent do
      |> assign_new(:editing, fn -> %{} end)
      |> assign_new(:collisions, fn -> %{} end)
      |> assign_new(:expanded_candidates, fn -> MapSet.new() end)
-     |> stream(:drafts, drafts)}
+     |> stream(:drafts, drafts, reset: true)}
   end
 
   @impl true
@@ -212,15 +218,22 @@ defmodule ManillumWeb.FilingTrayComponent do
   # `push_event`s the dom_ids list and the hook adds the
   # `filing_tray__draft--filing` class to each (with an 80ms stagger
   # so the rail visibly cascades rather than flashing every stamp at
-  # once). Failed file calls are skipped silently — the surviving
-  # batch still renders an undo flash with the correct count.
+  # once).
+  #
+  # Drafts with a `collision_card_id` are skipped upfront (their file
+  # pill is gated in the read-only view too — M-64). Skipped drafts
+  # are surfaced in the parent LV's flash so the user isn't surprised
+  # when "file all" leaves cards behind in the rail.
   def handle_event("file_all", _params, socket) do
     actor = socket.assigns.actor
 
-    filed =
+    {to_file, skipped} =
       actor
       |> list_drafts()
-      |> Enum.flat_map(fn draft ->
+      |> Enum.split_with(&is_nil(&1.collision_card_id))
+
+    filed =
+      Enum.flat_map(to_file, fn draft ->
         case Archive.file_card(draft, actor: actor) do
           {:ok, _} ->
             [
@@ -236,12 +249,18 @@ defmodule ManillumWeb.FilingTrayComponent do
         end
       end)
 
+    skipped_count = length(skipped)
+
     case filed do
       [] ->
+        if skipped_count > 0 do
+          send(self(), {:file_all_all_skipped, skipped_count})
+        end
+
         {:noreply, socket}
 
       filed ->
-        send(self(), {:filed_all_for_undo, %{filed: filed}})
+        send(self(), {:filed_all_for_undo, %{filed: filed, skipped: skipped_count}})
 
         {:noreply,
          push_event(socket, "filing_tray:start_animations", %{
@@ -460,14 +479,6 @@ defmodule ManillumWeb.FilingTrayComponent do
     end
   end
 
-  defp atomize_drawer(value) when is_binary(value) do
-    String.to_existing_atom(value)
-  rescue
-    ArgumentError -> nil
-  end
-
-  defp atomize_drawer(_), do: nil
-
   defp maybe_rename(card, params, actor) do
     new_drawer = atomize_drawer(params["drawer"]) || card.drawer
     new_date = params["date_token"] || card.date_token
@@ -500,18 +511,6 @@ defmodule ManillumWeb.FilingTrayComponent do
         actor: actor
       )
       |> Ash.update()
-    end
-  end
-
-  defp format_invalid(%Ash.Error.Invalid{errors: errors}) do
-    errors
-    |> Enum.map_join("; ", fn
-      %{message: msg} when is_binary(msg) -> msg
-      err -> inspect(err)
-    end)
-    |> case do
-      "" -> "Couldn't save the edit."
-      msg -> msg
     end
   end
 
@@ -1022,13 +1021,4 @@ defmodule ManillumWeb.FilingTrayComponent do
   defp failure_message(%{reason: reason}) when is_binary(reason), do: reason
   defp failure_message(%{reason: reason}), do: inspect(reason)
   defp failure_message(_), do: "Something went wrong while cataloging."
-
-  defp drawer_name(:ANT), do: "Dr. 01 · Antiquity"
-  defp drawer_name(:CLA), do: "Dr. 02 · Classical"
-  defp drawer_name(:MED), do: "Dr. 03 · Medieval"
-  defp drawer_name(:REN), do: "Dr. 04 · Renaissance"
-  defp drawer_name(:EAR), do: "Dr. 05 · Early Modern"
-  defp drawer_name(:MOD), do: "Dr. 06 · Modern"
-  defp drawer_name(:CON), do: "Dr. 07 · Contemporary"
-  defp drawer_name(other), do: to_string(other)
 end

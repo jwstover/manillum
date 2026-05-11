@@ -1132,6 +1132,97 @@ defmodule ManillumWeb.ConversationsLiveTest do
       assert html =~ "ANT · 1177BC · BATCH-UNDO-B"
     end
 
+    test "file all skips colliding drafts and surfaces the count in the flash", ctx do
+      existing =
+        Ash.Seed.seed!(Manillum.Archive.Card, %{
+          user_id: ctx.user.id,
+          drawer: :ANT,
+          date_token: "1177BC",
+          slug: "BATCH-EXISTING",
+          card_type: :event,
+          front: "F",
+          back: "B",
+          status: :filed
+        })
+
+      capture = seed_capture(ctx.user, ctx.conversation)
+      clean = seed_draft(ctx.user, capture, "BATCH-CLEAN")
+
+      collider =
+        Ash.Seed.seed!(Manillum.Archive.Card, %{
+          user_id: ctx.user.id,
+          capture_id: capture.id,
+          drawer: :ANT,
+          date_token: "1177BC",
+          slug: "BATCH-COLLIDE",
+          card_type: :event,
+          front: "F",
+          back: "B",
+          status: :draft,
+          collision_card_id: existing.id
+        })
+
+      {:ok, view, _html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
+
+      view
+      |> element("#filing-tray button[phx-click='file_all']")
+      |> render_click()
+
+      _ = :sys.get_state(view.pid)
+
+      # Clean draft filed; colliding draft left untouched.
+      assert Ash.get!(Manillum.Archive.Card, clean.id, authorize?: false).status == :filed
+      assert Ash.get!(Manillum.Archive.Card, collider.id, authorize?: false).status == :draft
+
+      html = render(view)
+      assert html =~ "Filed 1 · skipped 1 (collision)"
+    end
+
+    test "file all with only colliding drafts surfaces a warn flash and no undo", ctx do
+      existing =
+        Ash.Seed.seed!(Manillum.Archive.Card, %{
+          user_id: ctx.user.id,
+          drawer: :ANT,
+          date_token: "1177BC",
+          slug: "BATCH-EXISTING-ONLY",
+          card_type: :event,
+          front: "F",
+          back: "B",
+          status: :filed
+        })
+
+      capture = seed_capture(ctx.user, ctx.conversation)
+
+      collider =
+        Ash.Seed.seed!(Manillum.Archive.Card, %{
+          user_id: ctx.user.id,
+          capture_id: capture.id,
+          drawer: :ANT,
+          date_token: "1177BC",
+          slug: "BATCH-COLLIDE-ONLY",
+          card_type: :event,
+          front: "F",
+          back: "B",
+          status: :draft,
+          collision_card_id: existing.id
+        })
+
+      {:ok, view, _html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
+
+      view
+      |> element("#filing-tray button[phx-click='file_all']")
+      |> render_click()
+
+      _ = :sys.get_state(view.pid)
+
+      # Card stays :draft; warn flash explains; no undo flash.
+      assert Ash.get!(Manillum.Archive.Card, collider.id, authorize?: false).status == :draft
+
+      html = render(view)
+      assert html =~ "Skipped 1 card — resolve the collision banner first."
+      refute html =~ ~s(phx-click="undo_file")
+    end
+
     test "file all with no drafts is a no-op (no flash, no error)", ctx do
       # No drafts seeded. The tray is :empty on mount, so the file_all
       # button is hidden via the `:if` guard on the `:actions` slot.

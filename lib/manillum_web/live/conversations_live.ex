@@ -783,17 +783,24 @@ defmodule ManillumWeb.ConversationsLive do
   # 1100ms beat so each article finishes its FILED-stamp + slide-out
   # animation before its `stream_delete` fires. The flash carries the
   # batch's card_ids so a single undo click can reverse them all.
-  def handle_info({:filed_all_for_undo, %{filed: filed}}, socket) do
+  #
+  # `skipped` is the count of drafts the tray refused to file because
+  # they had a `collision_card_id` set; surfaced in the toast body
+  # so the user isn't surprised when "file all" leaves cards behind
+  # in the rail.
+  def handle_info({:filed_all_for_undo, %{filed: filed} = payload}, socket) do
     Enum.each(filed, fn %{dom_id: dom_id, card_id: id} ->
       Process.send_after(self(), {:remove_filed_dom, dom_id, id}, 1100)
     end)
 
     card_ids = Enum.map(filed, & &1.card_id)
+    skipped = Map.get(payload, :skipped, 0)
 
     title =
-      case length(filed) do
-        1 -> filed |> hd() |> Map.get(:call_number)
-        n -> "Filed #{n} cards"
+      case {length(filed), skipped} do
+        {1, 0} -> filed |> hd() |> Map.get(:call_number)
+        {n, 0} -> "Filed #{n} cards"
+        {n, s} -> "Filed #{n} · skipped #{s} (collision)"
       end
 
     {:noreply,
@@ -802,6 +809,18 @@ defmodule ManillumWeb.ConversationsLive do
        title: title,
        undo_card_ids: card_ids
      })}
+  end
+
+  # All drafts in the bulk-file pass collided — nothing was filed.
+  # Surface a warn flash so the user understands the click didn't
+  # silently no-op.
+  def handle_info({:file_all_all_skipped, count}, socket) do
+    {:noreply,
+     put_flash(
+       socket,
+       :warn,
+       "Skipped #{count} #{if count == 1, do: "card", else: "cards"} — resolve the collision banner first."
+     )}
   end
 
   def handle_info({:remove_filed_dom, dom_id, card_id}, socket) do

@@ -22,6 +22,8 @@ defmodule ManillumWeb.FileCardLive do
 
   use ManillumWeb, :live_view
 
+  import ManillumWeb.CardHelpers
+
   alias Manillum.Archive
   alias Manillum.Archive.Card
   alias Manillum.Archive.Card.CallNumberProposal
@@ -216,7 +218,7 @@ defmodule ManillumWeb.FileCardLive do
             >
               <.icon name="hero-archive-box-micro" /> save &amp; file
             </button>
-            <span style="flex:1"></span>
+            <span class="file_card__actions-spacer" aria-hidden="true"></span>
             <button
               type="button"
               class="action_pill action_pill--bare"
@@ -390,14 +392,6 @@ defmodule ManillumWeb.FileCardLive do
     end
   end
 
-  defp atomize_drawer(value) when is_binary(value) do
-    String.to_existing_atom(value)
-  rescue
-    ArgumentError -> nil
-  end
-
-  defp atomize_drawer(_), do: nil
-
   defp atomize_card_type(value) when is_binary(value) and value != "" do
     String.to_existing_atom(value)
   rescue
@@ -436,18 +430,6 @@ defmodule ManillumWeb.FileCardLive do
 
   defp cancel_redirect(%{id: id}), do: ~p"/cards/#{id}"
 
-  defp format_invalid(%Ash.Error.Invalid{errors: errors}) do
-    errors
-    |> Enum.map_join("; ", fn
-      %{message: msg} when is_binary(msg) -> msg
-      err -> inspect(err)
-    end)
-    |> case do
-      "" -> "Couldn't save the card."
-      msg -> msg
-    end
-  end
-
   defp status_label(:draft), do: "DRAFT"
   defp status_label(:filed), do: "FILED"
   defp status_label(:archived), do: "ARCHIVED"
@@ -470,13 +452,4 @@ defmodule ManillumWeb.FileCardLive do
 
   defp pad(n) when n < 10, do: "0#{n}"
   defp pad(n), do: "#{n}"
-
-  defp drawer_name(:ANT), do: "Dr. 01 · Antiquity"
-  defp drawer_name(:CLA), do: "Dr. 02 · Classical"
-  defp drawer_name(:MED), do: "Dr. 03 · Medieval"
-  defp drawer_name(:REN), do: "Dr. 04 · Renaissance"
-  defp drawer_name(:EAR), do: "Dr. 05 · Early Modern"
-  defp drawer_name(:MOD), do: "Dr. 06 · Modern"
-  defp drawer_name(:CON), do: "Dr. 07 · Contemporary"
-  defp drawer_name(other), do: to_string(other)
 end

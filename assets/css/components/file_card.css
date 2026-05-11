@@ -188,3 +188,7 @@
   padding-top: 1rem;
   border-top: 1px dotted var(--color-rule);
 }
+
+.file_card__actions-spacer {
+  flex: 1;
+}
