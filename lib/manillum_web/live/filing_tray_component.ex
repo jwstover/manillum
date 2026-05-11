@@ -901,7 +901,7 @@ defmodule ManillumWeb.FilingTrayComponent do
       nil
     else
       paragraphs
-      |> Enum.find_index(&(String.trim(&1) =~ src_first_line))
+      |> Enum.find_index(&String.contains?(String.trim(&1), src_first_line))
       |> case do
         nil -> nil
         idx -> idx + 1

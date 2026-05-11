@@ -42,6 +42,15 @@ defmodule Manillum.Archive.Capture do
   postgres do
     table "captures"
     repo Manillum.Repo
+
+    # Captures outlive their source Conversation / Message per spec §5
+    # Stream C — they're the audit trail of cataloging activity. On
+    # delete of the parent row, null out the FK rather than restrict
+    # (NO ACTION) so the Capture row survives as a soft orphan.
+    references do
+      reference :conversation, on_delete: :nilify
+      reference :message, on_delete: :nilify
+    end
   end
 
   oban do

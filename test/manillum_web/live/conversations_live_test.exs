@@ -792,6 +792,36 @@ defmodule ManillumWeb.ConversationsLiveTest do
       assert html =~ "QRY № 0089 · ¶ 2"
     end
 
+    test ":selection scope with regex metacharacters in the source_text resolves correctly",
+         ctx do
+      # Regression for the `=~` regex pitfall — selections containing
+      # `?`, `(`, `.`, etc. must match by literal substring, not as a
+      # compiled regex pattern.
+      message =
+        Ash.Seed.seed!(Manillum.Conversations.Message, %{
+          conversation_id: ctx.conversation.id,
+          role: :assistant,
+          content: "alpha bit\n\nWas Hannibal (truly) defeated?\n\ngamma bit",
+          complete: true
+        })
+
+      capture =
+        Ash.Seed.seed!(Capture, %{
+          user_id: ctx.user.id,
+          source_text: "Was Hannibal (truly) defeated?",
+          scope: :selection,
+          status: :catalogued,
+          conversation_id: ctx.conversation.id,
+          message_id: message.id
+        })
+
+      _draft = seed_draft(ctx.user, capture, "SEL-REGEX")
+
+      {:ok, _view, html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
+
+      assert html =~ "QRY № 0089 · ¶ 2"
+    end
+
     test "draft with no conversation_id renders no provenance line", ctx do
       # Conversations are now FK-constrained as of M-66's belongs_to
       # additions — orphan conversation_ids on captures are impossible.
