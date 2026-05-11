@@ -469,9 +469,12 @@ defmodule ManillumWeb.ConversationsLiveTest do
       assert filed.status == :filed
 
       html = render(view)
-      assert html =~ "id=\"undo-toast\""
+      # Undo flash rendered as the standard :ok flash with our `undo_card_ids`
+      # payload + an `undo_file` action button in the toast's actions slot.
+      assert html =~ ~s(id="flash-ok")
       assert html =~ "ANT · 1177BC · OMEGA"
       assert html =~ ~s(phx-click="undo_file")
+      assert html =~ ~s(phx-value-card-ids="#{draft.id}")
     end
 
     test "post-animation send_update removes the filed draft from the tray", ctx do
@@ -510,35 +513,16 @@ defmodule ManillumWeb.ConversationsLiveTest do
       send(view.pid, {:remove_filed_dom, "drafts-#{draft.id}", draft.id})
       _ = :sys.get_state(view.pid)
 
-      view |> element("#undo-toast .toast__actions button") |> render_click()
+      view |> element("#flash-ok button[phx-click='undo_file']") |> render_click()
       _ = :sys.get_state(view.pid)
 
       restored = Ash.get!(Manillum.Archive.Card, draft.id, authorize?: false)
       assert restored.status == :draft
 
       html = render(view)
-      refute html =~ "id=\"undo-toast\""
+      # `:ok` flash cleared by the undo handler → no flash content visible
+      refute html =~ ~s(phx-value-card-ids="#{draft.id}")
       assert html =~ "ANT · 1177BC · OMEGA-UNDO"
-    end
-
-    test "undo_expire clears the undo toast without changing card status", ctx do
-      capture = seed_capture(ctx.user, ctx.conversation)
-      draft = seed_draft(ctx.user, capture, "OMEGA-EXP")
-
-      {:ok, view, _html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
-
-      send_file_card(view, draft.id)
-      _ = :sys.get_state(view.pid)
-      assert render(view) =~ "id=\"undo-toast\""
-
-      send(view.pid, {:undo_expire, draft.id})
-      _ = :sys.get_state(view.pid)
-
-      html = render(view)
-      refute html =~ "id=\"undo-toast\""
-
-      filed = Ash.get!(Manillum.Archive.Card, draft.id, authorize?: false)
-      assert filed.status == :filed
     end
 
     test "scheduled :remove_filed_dom is a no-op once the card is unfiled", ctx do
@@ -550,7 +534,7 @@ defmodule ManillumWeb.ConversationsLiveTest do
       send_file_card(view, draft.id)
       _ = :sys.get_state(view.pid)
 
-      view |> element("#undo-toast .toast__actions button") |> render_click()
+      view |> element("#flash-ok button[phx-click='undo_file']") |> render_click()
       _ = :sys.get_state(view.pid)
 
       # The card is now back to :draft. The 1100ms `:remove_filed_dom`
@@ -1112,9 +1096,11 @@ defmodule ManillumWeb.ConversationsLiveTest do
 
       # One undo flash with the batch count
       html = render(view)
-      assert html =~ ~s(id="undo-toast")
+      assert html =~ ~s(id="flash-ok")
       assert html =~ "Filed 3 cards"
       assert html =~ ~s(phx-click="undo_file")
+      # All three card_ids carried as a CSV in phx-value-card-ids
+      assert html =~ "phx-value-card-ids=\""
     end
 
     test "undo from a batch flash restores all cards to drafts", ctx do
@@ -1130,7 +1116,7 @@ defmodule ManillumWeb.ConversationsLiveTest do
 
       _ = :sys.get_state(view.pid)
 
-      view |> element("#undo-toast button[phx-click='undo_file']") |> render_click()
+      view |> element("#flash-ok button[phx-click='undo_file']") |> render_click()
       _ = :sys.get_state(view.pid)
 
       for d <- [draft1, draft2] do
@@ -1139,37 +1125,11 @@ defmodule ManillumWeb.ConversationsLiveTest do
       end
 
       html = render(view)
-      refute html =~ ~s(id="undo-toast")
+      # `:ok` flash cleared by the undo handler
+      refute html =~ "Filed 2 cards"
       # Cards re-rendered in the tray
       assert html =~ "ANT · 1177BC · BATCH-UNDO-A"
       assert html =~ "ANT · 1177BC · BATCH-UNDO-B"
-    end
-
-    test "undo_expire_batch clears the toast without changing card status", ctx do
-      capture = seed_capture(ctx.user, ctx.conversation)
-      draft1 = seed_draft(ctx.user, capture, "BATCH-EXP-A")
-      draft2 = seed_draft(ctx.user, capture, "BATCH-EXP-B")
-
-      {:ok, view, _html} = live(ctx.conn, ~p"/conversations/#{ctx.conversation.id}")
-
-      view
-      |> element("#filing-tray button[phx-click='file_all']")
-      |> render_click()
-
-      _ = :sys.get_state(view.pid)
-      assert render(view) =~ ~s(id="undo-toast")
-
-      send(view.pid, {:undo_expire_batch, [draft1.id, draft2.id]})
-      _ = :sys.get_state(view.pid)
-
-      html = render(view)
-      refute html =~ ~s(id="undo-toast")
-
-      # Cards stay :filed
-      for d <- [draft1, draft2] do
-        card = Ash.get!(Manillum.Archive.Card, d.id, authorize?: false)
-        assert card.status == :filed
-      end
     end
 
     test "file all with no drafts is a no-op (no flash, no error)", ctx do
@@ -1183,7 +1143,7 @@ defmodule ManillumWeb.ConversationsLiveTest do
 
       # No undo flash is queued either.
       _ = :sys.get_state(view.pid)
-      refute render(view) =~ ~s(id="undo-toast")
+      refute render(view) =~ ~s(phx-click="undo_file")
     end
   end
 

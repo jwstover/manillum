@@ -81,11 +81,19 @@ defmodule ManillumWeb.Layouts do
   slot :inner_block,
     doc: "extra `<.flash>` siblings that should stack with the standard flashes"
 
+  slot :ok_flash,
+    doc:
+      "optional override for the `:ok` flash — caller renders the `<.flash kind={:ok}>` with custom slots (e.g. an `:actions` slot for an undo button). Falls back to the standard `<.flash kind={:ok}>` when absent."
+
   def flash_group(assigns) do
     ~H"""
     <div id={@id} class="toast_stack" aria-live="polite">
       <.flash kind={:info} flash={@flash} />
-      <.flash kind={:ok} flash={@flash} />
+      <%= if @ok_flash != [] do %>
+        {render_slot(@ok_flash, @flash)}
+      <% else %>
+        <.flash kind={:ok} flash={@flash} />
+      <% end %>
       <.flash kind={:warn} flash={@flash} />
       <.flash kind={:error} flash={@flash} />
 

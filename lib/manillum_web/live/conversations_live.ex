@@ -14,18 +14,19 @@ defmodule ManillumWeb.ConversationsLive do
     ~H"""
     <div class="conversation">
       <ManillumWeb.Layouts.flash_group flash={@flash}>
-        <ManillumWeb.CoreComponents.flash
-          :if={@undo_state}
-          id="undo-toast"
-          kind={:ok}
-          kicker="● FILED"
-          title={undo_title(@undo_state)}
-          show_progress={true}
-        >
-          <:actions>
-            <button type="button" phx-click="undo_file">undo</button>
-          </:actions>
-        </ManillumWeb.CoreComponents.flash>
+        <:ok_flash :let={flash}>
+          <ManillumWeb.CoreComponents.flash kind={:ok} flash={flash} show_progress={true}>
+            <:actions :if={undo_card_ids(flash) != []}>
+              <button
+                type="button"
+                phx-click="undo_file"
+                phx-value-card-ids={Enum.join(undo_card_ids(flash), ",")}
+              >
+                undo
+              </button>
+            </:actions>
+          </ManillumWeb.CoreComponents.flash>
+        </:ok_flash>
       </ManillumWeb.Layouts.flash_group>
       <.topbar active="conversations">
         <:tab id="today" href={~p"/"}>Today</:tab>
@@ -421,7 +422,6 @@ defmodule ManillumWeb.ConversationsLive do
       |> assign(:exchange_count, 0)
       |> assign(:message_form, nil)
       |> assign(:mentions, [])
-      |> assign(:undo_state, nil)
       |> stream_configure(:messages, dom_id: &"message-#{&1.id}")
 
     {:ok, socket}
@@ -563,53 +563,50 @@ defmodule ManillumWeb.ConversationsLive do
     end
   end
 
-  # Undo a recent file action — calls `Archive.unfile_card/2` and pushes
-  # the now-back-to-:draft card to the filing tray. Window enforced
-  # by the parent's `:undo_state` assign (cleared after 10s by
-  # `{:undo_expire, id}` from `handle_info`).
-  def handle_event("undo_file", _params, socket) do
+  # Undo a recent file action. Reads card_ids from the click value
+  # (the flash's undo button passes them as a CSV via
+  # `phx-value-card-ids`), calls `Archive.unfile_card/2` for each, and
+  # restores them to the tray via `send_update`. Clears the flash on
+  # completion. Window-enforcement is handled by the flash's own 10s
+  # auto-dismiss (the `FlashAutoDismiss` hook in `<.flash>`); once the
+  # flash auto-clears, the undo button is no longer in the DOM.
+  def handle_event("undo_file", %{"card-ids" => csv}, socket) when is_binary(csv) do
     user = socket.assigns.current_user
+    ids = csv |> String.split(",") |> Enum.map(&String.trim/1) |> Enum.reject(&(&1 == ""))
 
-    case socket.assigns.undo_state do
-      %{kind: :single, card_id: id} when not is_nil(user) ->
-        case undo_one(id, user) do
-          {:ok, drafted} ->
-            send_update(ManillumWeb.FilingTrayComponent,
-              id: "filing-tray",
-              action: {:restore_draft, drafted}
-            )
+    case {user, ids} do
+      {nil, _} ->
+        {:noreply, socket}
 
-            {:noreply, assign(socket, :undo_state, nil)}
+      {_, []} ->
+        {:noreply, socket}
 
-          {:error, err} ->
-            Logger.error("[undo_file] failed id=#{id} error=#{inspect(err)}")
+      {user, ids} ->
+        restored =
+          ids
+          |> Enum.flat_map(fn id ->
+            case undo_one(id, user) do
+              {:ok, drafted} ->
+                [drafted]
 
-            {:noreply,
-             socket
-             |> assign(:undo_state, nil)
-             |> put_flash(:error, "Couldn't undo. The card is filed.")}
-        end
+              {:error, err} ->
+                Logger.error("[undo_file] failed id=#{id} error=#{inspect(err)}")
+                []
+            end
+          end)
 
-      %{kind: :batch, card_ids: ids} when not is_nil(user) ->
-        Enum.each(ids, fn id ->
-          case undo_one(id, user) do
-            {:ok, drafted} ->
-              send_update(ManillumWeb.FilingTrayComponent,
-                id: "filing-tray",
-                action: {:restore_draft, drafted}
-              )
-
-            {:error, err} ->
-              Logger.error("[undo_file batch] failed id=#{id} error=#{inspect(err)}")
-          end
+        Enum.each(restored, fn drafted ->
+          send_update(ManillumWeb.FilingTrayComponent,
+            id: "filing-tray",
+            action: {:restore_draft, drafted}
+          )
         end)
 
-        {:noreply, assign(socket, :undo_state, nil)}
-
-      _ ->
-        {:noreply, socket}
+        {:noreply, clear_flash(socket, :ok)}
     end
   end
+
+  def handle_event("undo_file", _params, socket), do: {:noreply, socket}
 
   defp undo_one(id, user) do
     with {:ok, card} <-
@@ -761,42 +758,50 @@ defmodule ManillumWeb.ConversationsLive do
   #   2. We schedule `{:remove_filed_dom, dom_id}` 1100ms out so the
   #      tray's stamp-impression + slide-out keyframes can complete before
   #      `stream_delete` removes the article.
-  #   3. We schedule `{:undo_expire, card_id}` 10s out and assign
-  #      `:undo_state` so the undo toast renders.
-  #   4. Click "undo" → `handle_event("undo_file", ...)` → `Archive.unfile_card/2`
-  #      → restore the card to the tray via `send_update`.
+  #   3. We `put_flash(:ok, ...)` with `undo_card_ids` so the standard
+  #      flash machinery renders the toast + handles 10s auto-dismiss
+  #      via the `FlashAutoDismiss` hook. No bespoke `:undo_state`
+  #      assign or `:undo_expire` timer — single source of truth.
+  #   4. Click "undo" → `handle_event("undo_file", ...)` reads card_ids
+  #      from the click value, calls `Archive.unfile_card/2` for each,
+  #      restores via `send_update`, clears the flash.
   def handle_info({:filed_card_for_undo, payload}, socket) do
     %{card_id: id, dom_id: dom_id, call_number: cn} = payload
 
     Process.send_after(self(), {:remove_filed_dom, dom_id, id}, 1100)
-    Process.send_after(self(), {:undo_expire, id}, 10_000)
 
-    {:noreply, assign(socket, :undo_state, %{kind: :single, card_id: id, call_number: cn})}
+    {:noreply,
+     put_flash(socket, :ok, %{
+       kicker: "● FILED",
+       title: cn,
+       undo_card_ids: [id]
+     })}
   end
 
   # Bulk file action (M-63). Same shape as `:filed_card_for_undo` but
   # carries a list of files. Schedules per-card removals on the same
   # 1100ms beat so each article finishes its FILED-stamp + slide-out
-  # animation before its `stream_delete` fires. A single batch
-  # `:undo_expire` clears `:undo_state` after 10s.
+  # animation before its `stream_delete` fires. The flash carries the
+  # batch's card_ids so a single undo click can reverse them all.
   def handle_info({:filed_all_for_undo, %{filed: filed}}, socket) do
     Enum.each(filed, fn %{dom_id: dom_id, card_id: id} ->
       Process.send_after(self(), {:remove_filed_dom, dom_id, id}, 1100)
     end)
 
     card_ids = Enum.map(filed, & &1.card_id)
-    Process.send_after(self(), {:undo_expire_batch, card_ids}, 10_000)
 
-    sample = filed |> hd() |> Map.get(:call_number)
+    title =
+      case length(filed) do
+        1 -> filed |> hd() |> Map.get(:call_number)
+        n -> "Filed #{n} cards"
+      end
 
-    undo_state = %{
-      kind: :batch,
-      card_ids: card_ids,
-      count: length(filed),
-      sample_call_number: sample
-    }
-
-    {:noreply, assign(socket, :undo_state, undo_state)}
+    {:noreply,
+     put_flash(socket, :ok, %{
+       kicker: "● FILED",
+       title: title,
+       undo_card_ids: card_ids
+     })}
   end
 
   def handle_info({:remove_filed_dom, dom_id, card_id}, socket) do
@@ -820,27 +825,6 @@ defmodule ManillumWeb.ConversationsLive do
     end
 
     {:noreply, socket}
-  end
-
-  def handle_info({:undo_expire, card_id}, socket) do
-    case socket.assigns.undo_state do
-      %{kind: :single, card_id: ^card_id} -> {:noreply, assign(socket, :undo_state, nil)}
-      _ -> {:noreply, socket}
-    end
-  end
-
-  def handle_info({:undo_expire_batch, card_ids}, socket) do
-    case socket.assigns.undo_state do
-      %{kind: :batch, card_ids: stored} ->
-        if MapSet.new(stored) == MapSet.new(card_ids) do
-          {:noreply, assign(socket, :undo_state, nil)}
-        else
-          {:noreply, socket}
-        end
-
-      _ ->
-        {:noreply, socket}
-    end
   end
 
   def handle_info({:file_card_failed, _id}, socket) do
@@ -984,13 +968,19 @@ defmodule ManillumWeb.ConversationsLive do
 
   defp pad_qry(_), do: "----"
 
+  # Pulls the undo card_ids from the `:ok` flash payload, supporting
+  # both atom-keyed (in-memory) and string-keyed (post-cookie-roundtrip)
+  # shapes. Returns `[]` when the flash is unset or not an undo flash.
+  defp undo_card_ids(flash) do
+    case Phoenix.Flash.get(flash, :ok) do
+      %{undo_card_ids: ids} when is_list(ids) -> ids
+      %{"undo_card_ids" => ids} when is_list(ids) -> ids
+      _ -> []
+    end
+  end
+
   defp user_display(%{email: email}), do: to_string(email)
   defp user_display(_), do: ""
-
-  defp undo_title(%{kind: :single, call_number: cn}), do: cn
-  defp undo_title(%{kind: :batch, count: 1, sample_call_number: cn}), do: cn
-  defp undo_title(%{kind: :batch, count: count}), do: "Filed #{count} cards"
-  defp undo_title(%{call_number: cn}), do: cn
 
   defp rail_title(nil), do: "Untitled conversation"
   defp rail_title(""), do: "Untitled conversation"
