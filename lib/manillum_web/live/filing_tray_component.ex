@@ -1,0 +1,1024 @@
+defmodule ManillumWeb.FilingTrayComponent do
+  @moduledoc """
+  Right-column rail for cataloging activity on the conversation surface.
+  Three states drive the body:
+
+    * `:empty`    — no drafts, nothing in flight, no failure. The rail
+                    renders an italic invite (and the parent column
+                    collapses to zero width via CSS).
+    * `:drafting` — at least one Capture is in flight (LiveView pushed
+                    `{:capture_submitted, …}` after `Manillum.Archive.submit/2`).
+                    Renders a single `cataloging_indicator` — no per-draft
+                    skeletons.
+    * `:review`   — at least one persisted draft Card. Renders the draft
+                    list, with the cataloging indicator above when more
+                    captures are still in flight.
+
+  Parent (`ConversationsLive`) owns the PubSub subscription and the
+  send_update fan-out:
+
+    * `{:capture_submitted, %{capture_id: id}}` — pushed after the LV
+      successfully creates a Capture. Tray records the in-flight id.
+    * `{:cards_drafted, %{capture_id: id, draft_ids: [...]}}` — broadcast
+      from the cataloging pipeline. Tray pops the in-flight id, appends
+      the persisted drafts.
+    * `{:cards_drafting_failed, %{capture_id: id, reason: ...}}` —
+      broadcast on pipeline failure. Tray pops the in-flight id and
+      raises the failure banner.
+  """
+  use ManillumWeb, :live_component
+
+  import ManillumWeb.ManillumComponents
+  import ManillumWeb.CardHelpers
+
+  alias Manillum.Archive
+  alias Manillum.Archive.Card
+  alias Phoenix.LiveView.JS
+
+  require Ash.Query
+
+  @impl true
+  def update(%{action: {:capture_submitted, %{capture_id: capture_id}}}, socket) do
+    {:ok, track_in_flight(socket, capture_id)}
+  end
+
+  def update(%{action: {:cards_drafted, %{draft_ids: ids} = payload}}, socket) do
+    new_drafts =
+      socket.assigns.actor
+      |> list_drafts()
+      |> Enum.filter(&(&1.id in ids))
+
+    socket =
+      Enum.reduce(new_drafts, socket, fn draft, acc ->
+        stream_insert(acc, :drafts, draft, at: 0)
+      end)
+
+    {:ok,
+     socket
+     |> bump_count(length(new_drafts))
+     |> drop_in_flight(payload[:capture_id])}
+  end
+
+  def update(%{action: {:cards_drafting_failed, payload}}, socket) do
+    {:ok,
+     socket
+     |> assign(:failure, payload)
+     |> drop_in_flight(payload[:capture_id])}
+  end
+
+  # Removes a filed draft from the stream after the file animation has
+  # played. Called by the parent LV via `send_update` after the
+  # ~1100ms keyframe completes. We delete by dom_id since the card row
+  # has already had its `status` flipped to `:filed` and is no longer
+  # in `:my_drafts`.
+  def update(%{action: {:remove_filed, dom_id}}, socket) do
+    {:ok,
+     socket
+     |> stream_delete_by_dom_id(:drafts, dom_id)
+     |> bump_count(-1)}
+  end
+
+  # Restore a card to the tray after `Archive.unfile_card` flipped its
+  # status back to `:draft`. The parent LV reads the card and forwards
+  # it here so the tray re-inserts it at the top.
+  def update(%{action: {:restore_draft, card}}, socket) do
+    {:ok,
+     socket
+     |> stream_insert(:drafts, card, at: 0)
+     |> bump_count(1)}
+  end
+
+  def update(assigns, socket) do
+    drafts = list_drafts(assigns.actor)
+    candidate_cards = load_candidate_cards(drafts, assigns.actor)
+
+    # `reset: true` so non-action `send_update`s (initial mount + any
+    # parent re-render that doesn't carry an `:action` key) replace the
+    # stream wholesale rather than re-inserting on top of existing
+    # items. Without it the client-side de-dupe hides the visual bug,
+    # but every render sends the full draft list across the wire.
+    {:ok,
+     socket
+     |> assign(assigns)
+     |> assign(:draft_count, length(drafts))
+     |> assign(:candidate_cards, candidate_cards)
+     |> assign_new(:failure, fn -> nil end)
+     |> assign_new(:dismissed, fn -> false end)
+     |> assign_new(:in_flight, fn -> MapSet.new() end)
+     |> assign_new(:editing, fn -> %{} end)
+     |> assign_new(:collisions, fn -> %{} end)
+     |> assign_new(:expanded_candidates, fn -> MapSet.new() end)
+     |> stream(:drafts, drafts, reset: true)}
+  end
+
+  @impl true
+  def handle_event("discard", %{"id" => id}, socket) do
+    actor = socket.assigns.actor
+
+    with {:ok, card} <- Ash.get(Card, id, actor: actor),
+         :ok <- Archive.discard_card(card, actor: actor) do
+      {:noreply,
+       socket
+       |> stream_delete(:drafts, card)
+       |> bump_count(-1)}
+    else
+      {:error, _} -> {:noreply, socket}
+    end
+  end
+
+  # File a draft. Per the 2026-05-07 decision (option B), the file action
+  # runs immediately and the undo path lives in the parent LV (10s grace
+  # window via `Card.:unfile`). The DOM transition (stamp impression →
+  # slide out) plays via the `.filing_tray__draft--filing` class added by
+  # `phx-click` on the client; the server fires
+  # `{:filed_card_for_undo, payload}` so the parent LV can render the
+  # undo toast and schedule the post-animation `stream_delete` back here.
+  def handle_event("file_card", %{"id" => id, "dom-id" => dom_id}, socket) do
+    actor = socket.assigns.actor
+
+    with {:ok, card} <-
+           Ash.get(Card, id,
+             actor: actor,
+             load: [
+               :call_number,
+               capture: [:conversation, :message],
+               collision_card: [:call_number]
+             ]
+           ),
+         {:ok, filed} <- Archive.file_card(card, actor: actor) do
+      send(
+        self(),
+        {:filed_card_for_undo,
+         %{card_id: filed.id, dom_id: dom_id, call_number: card.call_number}}
+      )
+
+      # Don't decrement `draft_count` yet — the article is still
+      # animating in the rail (FILED stamp + slide-out, ~1100ms). If we
+      # decrement now and this was the last draft, `tray_state` flips
+      # to `:empty` and the container CSS collapses to `display: none`,
+      # which clips the in-flight animation. Decrement when the stream
+      # item is actually removed (see `:remove_filed` clause).
+      {:noreply, socket}
+    else
+      {:error, _} ->
+        send(self(), {:file_card_failed, id})
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event("dismiss_failure", _params, socket) do
+    {:noreply, assign(socket, :failure, nil)}
+  end
+
+  # Toggles the inline preview of a duplicate-candidate card on a
+  # draft. The expanded set is keyed by `{draft_id, candidate_id}` so
+  # each candidate per draft expands independently. Lazy-loads the
+  # candidate's `:front` and `:back` if not already cached.
+  def handle_event(
+        "toggle_dup_candidate",
+        %{"draft-id" => draft_id, "candidate-id" => candidate_id},
+        socket
+      ) do
+    key = {draft_id, candidate_id}
+    expanded = socket.assigns.expanded_candidates
+
+    expanded =
+      if MapSet.member?(expanded, key) do
+        MapSet.delete(expanded, key)
+      else
+        MapSet.put(expanded, key)
+      end
+
+    socket = assign(socket, :expanded_candidates, expanded)
+
+    # Re-insert the draft so the article re-renders with the new
+    # expanded state — stream items are otherwise write-only and don't
+    # pick up assign changes from outside.
+    actor = socket.assigns.actor
+
+    socket =
+      case Ash.get(Card, draft_id,
+             actor: actor,
+             load: [
+               :call_number,
+               capture: [:conversation, :message],
+               collision_card: [:call_number]
+             ]
+           ) do
+        {:ok, card} -> stream_insert(socket, :drafts, card)
+        _ -> socket
+      end
+
+    {:noreply, socket}
+  end
+
+  # Bulk file action — fires `Archive.file_card/2` for every draft
+  # currently visible to the actor in one shot. The animation runs
+  # client-side via the colocated `FilingTrayBatch` hook: server
+  # `push_event`s the dom_ids list and the hook adds the
+  # `filing_tray__draft--filing` class to each (with an 80ms stagger
+  # so the rail visibly cascades rather than flashing every stamp at
+  # once).
+  #
+  # Drafts with a `collision_card_id` are skipped upfront (their file
+  # pill is gated in the read-only view too — M-64). Skipped drafts
+  # are surfaced in the parent LV's flash so the user isn't surprised
+  # when "file all" leaves cards behind in the rail.
+  def handle_event("file_all", _params, socket) do
+    actor = socket.assigns.actor
+
+    {to_file, skipped} =
+      actor
+      |> list_drafts()
+      |> Enum.split_with(&is_nil(&1.collision_card_id))
+
+    filed =
+      Enum.flat_map(to_file, fn draft ->
+        case Archive.file_card(draft, actor: actor) do
+          {:ok, _} ->
+            [
+              %{
+                card_id: draft.id,
+                dom_id: "drafts-#{draft.id}",
+                call_number: draft.call_number
+              }
+            ]
+
+          _ ->
+            []
+        end
+      end)
+
+    skipped_count = length(skipped)
+
+    case filed do
+      [] ->
+        if skipped_count > 0 do
+          send(self(), {:file_all_all_skipped, skipped_count})
+        end
+
+        {:noreply, socket}
+
+      filed ->
+        send(self(), {:filed_all_for_undo, %{filed: filed, skipped: skipped_count}})
+
+        {:noreply,
+         push_event(socket, "filing_tray:start_animations", %{
+           dom_ids: Enum.map(filed, & &1.dom_id)
+         })}
+    end
+  end
+
+  # Open inline edit on a draft. Builds a plain Phoenix form (not an
+  # AshPhoenix.Form because the save path dispatches to two Ash actions
+  # — `:rename` for call-number segments and `:edit_content` for
+  # front/back/card_type/entities). Re-inserts the draft into the stream
+  # so its article re-renders with the form instead of the read-only
+  # view; the stream item is otherwise the same struct.
+  def handle_event("edit_draft", %{"id" => id}, socket) do
+    actor = socket.assigns.actor
+
+    with {:ok, card} <-
+           Ash.get(Card, id,
+             actor: actor,
+             load: [
+               :call_number,
+               capture: [:conversation, :message],
+               collision_card: [:call_number]
+             ]
+           ) do
+      form = build_edit_form(card)
+
+      {:noreply,
+       socket
+       |> assign(:editing, Map.put(socket.assigns.editing, id, form))
+       |> stream_insert(:drafts, card)}
+    else
+      {:error, _} -> {:noreply, socket}
+    end
+  end
+
+  def handle_event("cancel_edit", %{"id" => id}, socket) do
+    actor = socket.assigns.actor
+
+    with {:ok, card} <-
+           Ash.get(Card, id,
+             actor: actor,
+             load: [
+               :call_number,
+               capture: [:conversation, :message],
+               collision_card: [:call_number]
+             ]
+           ) do
+      {:noreply,
+       socket
+       |> assign(:editing, Map.delete(socket.assigns.editing, id))
+       |> assign(:collisions, Map.delete(socket.assigns.collisions, id))
+       |> stream_insert(:drafts, card)}
+    else
+      {:error, _} -> {:noreply, socket}
+    end
+  end
+
+  # phx-change. Refresh the form's params so the inputs keep the
+  # user's typing across re-renders, and re-run `:propose_call_number`
+  # so the slug-collision warning surfaces inline as the user types.
+  # Only re-checks when at least one call-number segment is present
+  # and non-empty (otherwise the proposal would error on a missing
+  # required input).
+  def handle_event("validate_edit", %{"card_id" => id, "draft" => params}, socket) do
+    form = to_form(params, as: "draft")
+    prev_collision = Map.get(socket.assigns.collisions, id)
+    next_collision = propose_collision(socket, params)
+
+    socket =
+      socket
+      |> assign(:editing, Map.put(socket.assigns.editing, id, form))
+      |> assign(:collisions, Map.put(socket.assigns.collisions, id, next_collision))
+
+    # Only re-insert the stream item when the rendered collision state
+    # actually changed. Typing in front/back doesn't affect anything the
+    # article displays beyond what morphdom already preserves on the
+    # form inputs (stable IDs + the `<.form>` wrapper handle value/
+    # focus preservation), and an unconditional stream_insert here
+    # blows the user's focus out on every keystroke.
+    socket =
+      if collision_changed?(prev_collision, next_collision) do
+        case Ash.get(Card, id,
+               actor: socket.assigns.actor,
+               load: [
+                 :call_number,
+                 capture: [:conversation, :message],
+                 collision_card: [:call_number]
+               ]
+             ) do
+          {:ok, card} -> stream_insert(socket, :drafts, card)
+          _ -> socket
+        end
+      else
+        socket
+      end
+
+    {:noreply, socket}
+  end
+
+  def handle_event("save_edit", %{"card_id" => id, "draft" => params}, socket) do
+    actor = socket.assigns.actor
+
+    with {:ok, card} <-
+           Ash.get(Card, id,
+             actor: actor,
+             load: [
+               :call_number,
+               capture: [:conversation, :message],
+               collision_card: [:call_number]
+             ]
+           ),
+         {:ok, card} <- maybe_rename(card, params, actor),
+         {:ok, card} <- maybe_edit_content(card, params, actor) do
+      card =
+        Ash.load!(
+          card,
+          [:call_number, capture: [:conversation, :message], collision_card: [:call_number]],
+          actor: actor
+        )
+
+      {:noreply,
+       socket
+       |> assign(:editing, Map.delete(socket.assigns.editing, id))
+       |> assign(:collisions, Map.delete(socket.assigns.collisions, id))
+       |> stream_insert(:drafts, card)}
+    else
+      {:error, %Ash.Error.Invalid{} = err} ->
+        send(self(), {:edit_save_failed, id, format_invalid(err)})
+        {:noreply, socket}
+
+      {:error, _} ->
+        send(self(), {:edit_save_failed, id, "Couldn't save the edit."})
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event("close_tray", _params, socket) do
+    {:noreply, assign(socket, :dismissed, true)}
+  end
+
+  def handle_event("reopen_tray", _params, socket) do
+    {:noreply, assign(socket, :dismissed, false)}
+  end
+
+  defp track_in_flight(socket, nil), do: socket
+
+  defp track_in_flight(socket, capture_id) do
+    update(socket, :in_flight, &MapSet.put(&1, capture_id))
+  end
+
+  defp drop_in_flight(socket, nil), do: socket
+
+  defp drop_in_flight(socket, capture_id) do
+    update(socket, :in_flight, &MapSet.delete(&1, capture_id))
+  end
+
+  # Maintain a parallel counter alongside the stream — Phoenix LV streams
+  # are write-only, so the component can't ask "how many entries do you
+  # currently have?". Tracking count here lets the tray collapse cleanly
+  # once the last draft is discarded.
+  defp bump_count(socket, delta) do
+    update(socket, :draft_count, &max(0, &1 + delta))
+  end
+
+  defp collision_changed?(a, b) do
+    existing_id(a) != existing_id(b)
+  end
+
+  defp existing_id(%{existing_card_id: id}), do: id
+  defp existing_id(_), do: nil
+
+  defp build_edit_form(card) do
+    to_form(
+      %{
+        "drawer" => to_string(card.drawer),
+        "date_token" => card.date_token,
+        "slug" => card.slug,
+        "front" => card.front,
+        "back" => card.back
+      },
+      as: "draft"
+    )
+  end
+
+  # Rerun `:propose_call_number` with the new segments to surface a
+  # slug collision inline (same shape `Capture.Changes.RunCataloging`
+  # uses on cataloged drafts). Only reports a collision against an
+  # existing card other than the one being edited — a draft's own
+  # call_number is in the `unique_call_number` index for non-draft
+  # cards only (Slice 6 / M-24), so editing in place doesn't
+  # self-collide, but if the user types segments matching a different
+  # filed card, we surface that.
+  defp propose_collision(socket, params) do
+    drawer = atomize_drawer(params["drawer"])
+    date_token = params["date_token"] || ""
+    slug = params["slug"] || ""
+
+    with true <- drawer != nil,
+         true <- date_token != "",
+         true <- slug != "",
+         {:ok, %{status: :collision, existing_card_id: id}} <-
+           Card
+           |> Ash.ActionInput.for_action(:propose_call_number, %{
+             user_id: socket.assigns.actor.id,
+             drawer: drawer,
+             date_token: date_token,
+             slug: slug,
+             card_type: :event
+           })
+           |> Ash.run_action(authorize?: false) do
+      %{existing_card_id: id}
+    else
+      _ -> nil
+    end
+  end
+
+  defp maybe_rename(card, params, actor) do
+    new_drawer = atomize_drawer(params["drawer"]) || card.drawer
+    new_date = params["date_token"] || card.date_token
+    new_slug = params["slug"] || card.slug
+
+    if {new_drawer, new_date, new_slug} == {card.drawer, card.date_token, card.slug} do
+      {:ok, card}
+    else
+      card
+      |> Ash.Changeset.for_update(
+        :rename,
+        %{drawer: new_drawer, date_token: new_date, slug: new_slug},
+        actor: actor
+      )
+      |> Ash.update()
+    end
+  end
+
+  defp maybe_edit_content(card, params, actor) do
+    new_front = params["front"] || card.front
+    new_back = params["back"] || card.back
+
+    if new_front == card.front and new_back == card.back do
+      {:ok, card}
+    else
+      card
+      |> Ash.Changeset.for_update(
+        :edit_content,
+        %{front: new_front, back: new_back},
+        actor: actor
+      )
+      |> Ash.update()
+    end
+  end
+
+  @impl true
+  def render(assigns) do
+    assigns =
+      assigns
+      |> assign(:tray_state, tray_state(assigns))
+      |> assign(:in_flight_count, MapSet.size(assigns.in_flight))
+
+    ~H"""
+    <div
+      class={tray_container_classes(@dismissed, @draft_count, @failure, @in_flight_count)}
+      id={@id}
+      phx-hook=".FilingTrayBatch"
+    >
+      <button
+        :if={@draft_count > 0 || @in_flight_count > 0 || @failure}
+        type="button"
+        class="filing_tray__spine"
+        phx-click="reopen_tray"
+        phx-target={@myself}
+        aria-label="Reopen filing tray"
+        tabindex={if @dismissed, do: "0", else: "-1"}
+      >
+        <span class="filing_tray__spine-rule" aria-hidden="true"></span>
+        <span class="filing_tray__spine-label">
+          {spine_label(@draft_count, @in_flight_count, @failure)}
+        </span>
+      </button>
+      <.filing_tray
+        state={@tray_state}
+        kicker={tray_kicker(@draft_count, @in_flight_count, @failure)}
+        sub={tray_sub(@tray_state, @failure)}
+        close_event="close_tray"
+        close_target={@myself}
+      >
+        <:actions :if={@tray_state == :review and @draft_count > 0}>
+          <button
+            type="button"
+            class="action_pill action_pill--primary"
+            phx-click="file_all"
+            phx-target={@myself}
+          >
+            <.icon name="hero-archive-box-micro" /> file all
+          </button>
+        </:actions>
+
+        <div :if={@failure} class="filing_tray__failure">
+          <.icon name="hero-exclamation-triangle-micro" /> {failure_message(@failure)}
+          <button type="button" phx-click="dismiss_failure" phx-target={@myself}>dismiss</button>
+        </div>
+
+        <.cataloging_indicator
+          :if={@in_flight_count > 0 && is_nil(@failure)}
+          sub={cataloging_sub(@in_flight_count)}
+        />
+
+        <div id={@id <> "-drafts"} phx-update="stream">
+          <article
+            :for={{dom_id, draft} <- @streams.drafts}
+            id={dom_id}
+            class="filing_tray__draft"
+            phx-remove={JS.transition("filing_tray__draft--discarding", time: 280)}
+          >
+            <%= case Map.get(@editing, draft.id) do %>
+              <% nil -> %>
+                <.draft_card
+                  draft={draft}
+                  dom_id={dom_id}
+                  target={@myself}
+                  candidate_cards={@candidate_cards}
+                  expanded_candidates={@expanded_candidates}
+                />
+              <% form -> %>
+                <.edit_card
+                  draft={draft}
+                  form={form}
+                  collision={Map.get(@collisions, draft.id)}
+                  target={@myself}
+                />
+            <% end %>
+          </article>
+        </div>
+      </.filing_tray>
+      <script :type={Phoenix.LiveView.ColocatedHook} name=".FilingTrayBatch">
+        // Cascade-applies the file animation to a list of draft articles
+        // when the server fires `filing_tray:start_animations`. Same JS
+        // chain as the per-pill click (strip `phx-remove`, add the
+        // `--filing` class) but staggered so the rail visibly cascades
+        // rather than flashing all stamps at once. Used by the bulk
+        // `file_all` action; the per-card path stays inline on the pill.
+        export default {
+          mounted() {
+            this.handleEvent("filing_tray:start_animations", ({ dom_ids }) => {
+              if (!Array.isArray(dom_ids)) return;
+              dom_ids.forEach((id, i) => {
+                setTimeout(() => {
+                  const el = document.getElementById(id);
+                  if (!el) return;
+                  el.removeAttribute("phx-remove");
+                  el.classList.add("filing_tray__draft--filing");
+                }, i * 80);
+              });
+            });
+          }
+        };
+      </script>
+    </div>
+    """
+  end
+
+  attr :draft, :map, required: true
+  attr :form, :map, required: true
+  attr :collision, :any, default: nil
+  attr :target, :any, required: true
+
+  defp edit_card(assigns) do
+    ~H"""
+    <.card face={:draft}>
+      <.form
+        for={@form}
+        as={:draft}
+        phx-change="validate_edit"
+        phx-submit="save_edit"
+        phx-target={@target}
+        class="filing_tray__edit"
+      >
+        <input type="hidden" name="card_id" value={@draft.id} />
+
+        <div class="filing_tray__edit-row filing_tray__edit-row--segments">
+          <label class="filing_tray__edit-label" for={"edit-#{@draft.id}-drawer"}>
+            <span class="filing_tray__edit-label-text">drawer</span>
+            <select
+              name="draft[drawer]"
+              id={"edit-#{@draft.id}-drawer"}
+              class="filing_tray__edit-input"
+            >
+              <option
+                :for={d <- ~w(ANT CLA MED REN EAR MOD CON)}
+                value={d}
+                selected={to_string(@form.params["drawer"]) == d}
+              >
+                {d}
+              </option>
+            </select>
+          </label>
+          <label class="filing_tray__edit-label" for={"edit-#{@draft.id}-date_token"}>
+            <span class="filing_tray__edit-label-text">date</span>
+            <input
+              type="text"
+              name="draft[date_token]"
+              id={"edit-#{@draft.id}-date_token"}
+              value={@form.params["date_token"]}
+              class="filing_tray__edit-input filing_tray__edit-input--date"
+            />
+          </label>
+          <label
+            class="filing_tray__edit-label filing_tray__edit-label--slug"
+            for={"edit-#{@draft.id}-slug"}
+          >
+            <span class="filing_tray__edit-label-text">slug</span>
+            <input
+              type="text"
+              name="draft[slug]"
+              id={"edit-#{@draft.id}-slug"}
+              value={@form.params["slug"]}
+              class="filing_tray__edit-input filing_tray__edit-input--slug"
+            />
+          </label>
+        </div>
+
+        <div :if={@collision} class="filing_tray__edit-collision">
+          <.icon name="hero-exclamation-triangle-micro" /> collides with an existing filed card
+        </div>
+
+        <label
+          class="filing_tray__edit-label filing_tray__edit-label--block"
+          for={"edit-#{@draft.id}-front"}
+        >
+          <span class="filing_tray__edit-label-text">front</span>
+          <textarea
+            name="draft[front]"
+            id={"edit-#{@draft.id}-front"}
+            rows="3"
+            class="filing_tray__edit-input filing_tray__edit-input--front"
+          >{@form.params["front"]}</textarea>
+        </label>
+
+        <label
+          class="filing_tray__edit-label filing_tray__edit-label--block"
+          for={"edit-#{@draft.id}-back"}
+        >
+          <span class="filing_tray__edit-label-text">back</span>
+          <textarea
+            name="draft[back]"
+            id={"edit-#{@draft.id}-back"}
+            rows="7"
+            class="filing_tray__edit-input filing_tray__edit-input--back"
+          >{@form.params["back"]}</textarea>
+        </label>
+
+        <div class="filing_tray__draft-actions">
+          <button type="submit" class="action_pill action_pill--primary">
+            save
+          </button>
+          <button
+            type="button"
+            class="action_pill action_pill--bare"
+            phx-click="cancel_edit"
+            phx-value-id={@draft.id}
+            phx-target={@target}
+          >
+            cancel
+          </button>
+        </div>
+      </.form>
+    </.card>
+    """
+  end
+
+  attr :draft, :map, required: true
+  attr :dom_id, :string, required: true
+  attr :target, :any, required: true
+  attr :candidate_cards, :map, default: %{}
+  attr :expanded_candidates, :any, default: nil
+
+  defp draft_card(assigns) do
+    ~H"""
+    <.card face={:draft}>
+      <div class="filing_tray__draft-head">
+        <.call_number inline>{@draft.call_number}</.call_number>
+      </div>
+      <.drawer_label>{drawer_name(@draft.drawer)}</.drawer_label>
+
+      <div :if={provenance_label(@draft)} class="filing_tray__draft-provenance">
+        {provenance_label(@draft)}
+      </div>
+
+      <div :if={collision_card(@draft)} class="filing_tray__draft-collision">
+        <div class="filing_tray__draft-collision-body">
+          <.icon name="hero-exclamation-triangle-micro" />
+          Looks like your existing card <.call_number inline tone={:brass}>
+            {collision_card(@draft).call_number}
+          </.call_number>.
+        </div>
+        <div class="filing_tray__draft-collision-actions">
+          <button
+            type="button"
+            class="action_pill action_pill--ghost"
+            phx-click="edit_draft"
+            phx-value-id={@draft.id}
+            phx-target={@target}
+          >
+            edit slug
+          </button>
+          <button
+            type="button"
+            class="action_pill action_pill--bare"
+            phx-click="discard"
+            phx-value-id={@draft.id}
+            phx-target={@target}
+          >
+            discard
+          </button>
+        </div>
+      </div>
+
+      <div class="filing_tray__draft-front">{@draft.front}</div>
+      <div class="filing_tray__draft-back">{@draft.back}</div>
+
+      <div
+        :if={dup_candidates(@draft, @candidate_cards) != []}
+        class="filing_tray__draft-dups"
+      >
+        <div class="filing_tray__draft-dups-head">
+          <.icon name="hero-document-duplicate-micro" /> looks similar to:
+        </div>
+        <ul class="filing_tray__draft-dups-list">
+          <li
+            :for={candidate <- dup_candidates(@draft, @candidate_cards)}
+            class="filing_tray__draft-dup"
+          >
+            <button
+              type="button"
+              class="filing_tray__draft-dup-toggle"
+              phx-click="toggle_dup_candidate"
+              phx-value-draft-id={@draft.id}
+              phx-value-candidate-id={candidate.id}
+              phx-target={@target}
+            >
+              <.call_number inline tone={:brass}>{candidate.call_number}</.call_number>
+            </button>
+            <div
+              :if={dup_expanded?(@expanded_candidates, @draft.id, candidate.id)}
+              class="filing_tray__draft-dup-preview"
+            >
+              <div class="filing_tray__draft-dup-front">{candidate.front}</div>
+              <div class="filing_tray__draft-dup-back">{candidate.back}</div>
+            </div>
+          </li>
+        </ul>
+      </div>
+
+      <div :if={!collision_card(@draft)} class="filing_tray__draft-actions">
+        <button
+          type="button"
+          class="action_pill action_pill--primary"
+          phx-click={file_click(@dom_id, @draft.id, @target)}
+        >
+          <.icon name="hero-archive-box-micro" /> file
+        </button>
+        <button
+          type="button"
+          class="action_pill action_pill--ghost"
+          phx-click="edit_draft"
+          phx-value-id={@draft.id}
+          phx-target={@target}
+        >
+          edit
+        </button>
+        <button
+          type="button"
+          class="action_pill action_pill--bare"
+          phx-click="discard"
+          phx-value-id={@draft.id}
+          phx-target={@target}
+        >
+          discard
+        </button>
+      </div>
+    </.card>
+    """
+  end
+
+  # Returns the loaded `collision_card` struct (with its call_number)
+  # if this draft has a collision against an existing filed card; nil
+  # otherwise. Handles the case where the relationship hasn't been
+  # explicitly loaded (older code paths) by treating it as `nil`.
+  defp collision_card(%{collision_card: %Card{} = c}), do: c
+  defp collision_card(_), do: nil
+
+  # Resolves the loaded candidate cards for a draft from the
+  # `candidate_cards` map (keyed by card id). Preserves the draft's
+  # original `duplicate_candidate_ids` order. Drops any ids that
+  # didn't load (the user may have already discarded one of the
+  # candidate cards between cataloging and now).
+  defp dup_candidates(%{duplicate_candidate_ids: ids}, candidate_cards)
+       when is_list(ids) and is_map(candidate_cards) do
+    ids
+    |> Enum.map(&Map.get(candidate_cards, &1))
+    |> Enum.reject(&is_nil/1)
+  end
+
+  defp dup_candidates(_, _), do: []
+
+  defp dup_expanded?(nil, _draft_id, _candidate_id), do: false
+
+  defp dup_expanded?(expanded, draft_id, candidate_id) do
+    MapSet.member?(expanded, {draft_id, candidate_id})
+  end
+
+  # Returns the QRY № N · ¶ M provenance line for a draft, or nil if
+  # the draft has no associated capture / conversation. `:whole` scope
+  # renders just `QRY № N`; `:selection` scope adds `· ¶ M` computed
+  # from the selection's position in the source message content.
+  # `:block` (legacy enum value, no longer produced) treated like
+  # `:whole`.
+  defp provenance_label(%{capture: %{conversation: %{query_number: q}, scope: scope} = capture})
+       when is_integer(q) do
+    base = "QRY № #{pad_qry(q)}"
+
+    case paragraph_index(capture, scope) do
+      nil -> base
+      idx -> "#{base} · ¶ #{idx}"
+    end
+  end
+
+  defp provenance_label(_), do: nil
+
+  defp paragraph_index(%{scope: :selection, source_text: src, message: %{content: content}}, _)
+       when is_binary(src) and is_binary(content) and src != "" do
+    paragraphs = paragraph_split(content)
+    src_first_line = src |> String.split("\n", parts: 2) |> hd() |> String.trim()
+
+    if src_first_line == "" do
+      nil
+    else
+      paragraphs
+      |> Enum.find_index(&String.contains?(String.trim(&1), src_first_line))
+      |> case do
+        nil -> nil
+        idx -> idx + 1
+      end
+    end
+  end
+
+  defp paragraph_index(_, _), do: nil
+
+  defp paragraph_split(content) do
+    String.split(content, ~r/\n\s*\n/, trim: true)
+  end
+
+  defp pad_qry(n) when is_integer(n) and n >= 0 do
+    n |> Integer.to_string() |> String.pad_leading(4, "0")
+  end
+
+  defp pad_qry(_), do: "----"
+
+  # Click handler for the file pill. Adds the `--filing` class to the
+  # parent article (which kicks off the FILED-stamp impression + slide-out
+  # CSS keyframes) and pushes the server `file_card` event with the
+  # draft id and dom_id. The server fires `Archive.file_card`, then bounces
+  # the post-animation removal back to the tray via the parent LV's
+  # `Process.send_after` cleanup.
+  defp file_click(dom_id, draft_id, target) do
+    # Strip the discard `phx-remove` so the eventual stream_delete (fired
+    # by the parent LV after the 1100ms file keyframes complete) doesn't
+    # rewind the article back to translateX(0) and replay the discard
+    # animation on top of the already-finished file slide-out.
+    JS.remove_attribute("phx-remove", to: "##{dom_id}")
+    |> JS.add_class("filing_tray__draft--filing", to: "##{dom_id}")
+    |> JS.push("file_card",
+      value: %{id: draft_id, "dom-id": dom_id},
+      target: target
+    )
+  end
+
+  defp list_drafts(actor) do
+    Archive.list_drafts!(actor: actor)
+  end
+
+  # Batch-loads the candidate cards referenced by every draft's
+  # `duplicate_candidate_ids`. Returns a `%{card_id => Card}` map keyed
+  # by candidate id so the renderer can resolve in O(1). Single query
+  # over the whole tray's union of candidate ids — avoids N+1 fetches
+  # at render time.
+  defp load_candidate_cards(drafts, actor) do
+    ids =
+      drafts
+      |> Enum.flat_map(fn d -> d.duplicate_candidate_ids || [] end)
+      |> Enum.uniq()
+
+    case ids do
+      [] ->
+        %{}
+
+      ids ->
+        Card
+        |> Ash.Query.filter(id in ^ids)
+        |> Ash.Query.load([:call_number])
+        |> Ash.read!(actor: actor)
+        |> Map.new(&{&1.id, &1})
+    end
+  end
+
+  # State-resolution: failure dominates (review state shows the banner +
+  # any persisted drafts), then drafts (review), then in-flight (drafting),
+  # then empty.
+  defp tray_state(%{failure: failure}) when not is_nil(failure), do: :review
+  defp tray_state(%{draft_count: n}) when n > 0, do: :review
+
+  defp tray_state(%{in_flight: in_flight}) do
+    if MapSet.size(in_flight) > 0, do: :drafting, else: :empty
+  end
+
+  defp tray_kicker(0, _in_flight, _failure), do: "FILING TRAY"
+  defp tray_kicker(1, _in_flight, _failure), do: "FILING TRAY · 1 DRAFT"
+  defp tray_kicker(n, _in_flight, _failure), do: "FILING TRAY · #{n} DRAFTS"
+
+  defp tray_sub(_state, failure) when not is_nil(failure), do: "Cataloging failed"
+
+  defp tray_sub(:empty, _failure),
+    do: "Anything you file from the conversation will land here."
+
+  defp tray_sub(:drafting, _failure),
+    do: "Cataloging in the background — keep chatting if you like."
+
+  defp tray_sub(:review, _failure),
+    do: "Drafts ready to file. Trust Livy and file all, or review each."
+
+  defp cataloging_sub(1), do: "1 capture in flight"
+  defp cataloging_sub(n), do: "#{n} captures in flight"
+
+  # Vertical mono label for the dismissed-state spine. Mirrors the design's
+  # `★ Filing tray · 3 · show ›` line. Drops the count when there are no
+  # persisted drafts (the spine still surfaces while drafts are forming
+  # or a failure is showing — the count would just read "0").
+  defp spine_label(0, in_flight, failure)
+       when in_flight > 0 or not is_nil(failure),
+       do: "★ Filing tray · show ›"
+
+  defp spine_label(n, _in_flight, _failure), do: "★ Filing tray · #{n} · show ›"
+
+  # Always keep the stream container in the DOM so Phoenix LV streams
+  # don't lose their items on close/reopen. Visibility is driven via
+  # CSS classes the parent layout can target.
+  defp tray_container_classes(dismissed, draft_count, failure, in_flight_count) do
+    empty? = draft_count == 0 and is_nil(failure) and in_flight_count == 0
+
+    [
+      "filing_tray__container",
+      empty? && "filing_tray__container--empty",
+      dismissed && "filing_tray__container--dismissed"
+    ]
+  end
+
+  defp failure_message(%{reason: reason}) when is_binary(reason), do: reason
+  defp failure_message(%{reason: reason}), do: inspect(reason)
+  defp failure_message(_), do: "Something went wrong while cataloging."
+end

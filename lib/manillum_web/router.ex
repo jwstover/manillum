@@ -35,6 +35,7 @@ defmodule ManillumWeb.Router do
       live "/drawers/:drawer", DrawersLive, :show
       live "/reference", ReferenceLive
       live "/cards/:id", CardLive
+      live "/cards/:id/edit", FileCardLive
       live "/quiz", QuizLive
     end
   end

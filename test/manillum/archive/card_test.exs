@@ -286,4 +286,215 @@ defmodule Manillum.Archive.CardTest do
                |> Ash.update()
     end
   end
+
+  describe ":unfile action" do
+    setup do
+      user = Ash.Seed.seed!(Manillum.Accounts.User, %{email: "unfile_test@example.com"})
+
+      seed = fn slug, status ->
+        Ash.Seed.seed!(Card, %{
+          user_id: user.id,
+          drawer: :ANT,
+          date_token: "1177BC",
+          slug: slug,
+          card_type: :event,
+          front: "F",
+          back: "B",
+          status: status
+        })
+      end
+
+      {:ok, user: user, seed: seed}
+    end
+
+    test "transitions a :filed card back to :draft", %{seed: seed} do
+      card = seed.("FILED-UNDO", :filed)
+
+      assert {:ok, drafted} =
+               card
+               |> Ash.Changeset.for_update(:unfile, %{})
+               |> Ash.update()
+
+      assert drafted.status == :draft
+    end
+
+    test "rejects unfiling a :draft card", %{seed: seed} do
+      card = seed.("DRAFT-UNDO", :draft)
+
+      assert {:error, _} =
+               card
+               |> Ash.Changeset.for_update(:unfile, %{})
+               |> Ash.update()
+    end
+
+    test "rejects unfiling an archived card", %{seed: seed} do
+      card = seed.("ARCH-UNDO", :archived)
+
+      assert {:error, _} =
+               card
+               |> Ash.Changeset.for_update(:unfile, %{})
+               |> Ash.update()
+    end
+  end
+
+  describe ":edit_content action" do
+    setup do
+      user = Ash.Seed.seed!(Manillum.Accounts.User, %{email: "edit_test@example.com"})
+
+      seed = fn slug, status ->
+        Ash.Seed.seed!(Card, %{
+          user_id: user.id,
+          drawer: :ANT,
+          date_token: "1177BC",
+          slug: slug,
+          card_type: :event,
+          front: "Original front",
+          back: "Original back",
+          status: status
+        })
+      end
+
+      {:ok, user: user, seed: seed}
+    end
+
+    test "updates front and back on a draft", %{seed: seed} do
+      card = seed.("EDIT-DRAFT", :draft)
+
+      assert {:ok, edited} =
+               card
+               |> Ash.Changeset.for_update(:edit_content, %{
+                 front: "New front",
+                 back: "New back"
+               })
+               |> Ash.update()
+
+      assert edited.front == "New front"
+      assert edited.back == "New back"
+      assert edited.status == :draft
+      assert edited.slug == "EDIT-DRAFT"
+    end
+
+    test "updates card_type and entities", %{seed: seed} do
+      card = seed.("EDIT-META", :draft)
+
+      assert {:ok, edited} =
+               card
+               |> Ash.Changeset.for_update(:edit_content, %{
+                 card_type: :concept,
+                 entities: ["Hannibal", "Rome"]
+               })
+               |> Ash.update()
+
+      assert edited.card_type == :concept
+      assert edited.entities == ["Hannibal", "Rome"]
+    end
+
+    test "leaves call-number segments untouched", %{seed: seed} do
+      card = seed.("EDIT-SEGS", :draft)
+
+      assert {:ok, edited} =
+               card
+               |> Ash.Changeset.for_update(:edit_content, %{front: "Updated"})
+               |> Ash.update()
+
+      assert edited.slug == "EDIT-SEGS"
+      assert edited.drawer == :ANT
+      assert edited.date_token == "1177BC"
+    end
+
+    test "works on a filed card too", %{seed: seed} do
+      card = seed.("EDIT-FILED", :filed)
+
+      assert {:ok, edited} =
+               card
+               |> Ash.Changeset.for_update(:edit_content, %{front: "Reworked"})
+               |> Ash.update()
+
+      assert edited.front == "Reworked"
+      assert edited.status == :filed
+    end
+  end
+
+  describe ":discard action" do
+    setup do
+      user = Ash.Seed.seed!(Manillum.Accounts.User, %{email: "discard_test@example.com"})
+
+      seed = fn slug, status ->
+        Ash.Seed.seed!(Card, %{
+          user_id: user.id,
+          drawer: :ANT,
+          date_token: "1177BC",
+          slug: slug,
+          card_type: :event,
+          front: "F",
+          back: "B",
+          status: status
+        })
+      end
+
+      {:ok, user: user, seed: seed}
+    end
+
+    test "destroys a :draft card", %{seed: seed} do
+      card = seed.("DRAFT-DISCARD", :draft)
+
+      assert :ok =
+               card
+               |> Ash.Changeset.for_destroy(:discard, %{})
+               |> Ash.destroy()
+
+      assert {:error, %Ash.Error.Invalid{errors: [%Ash.Error.Query.NotFound{}]}} =
+               Ash.get(Card, card.id, authorize?: false)
+    end
+
+    test "rejects discarding a filed card", %{seed: seed} do
+      card = seed.("FILED-DISCARD", :filed)
+
+      assert {:error, _} =
+               card
+               |> Ash.Changeset.for_destroy(:discard, %{})
+               |> Ash.destroy()
+    end
+  end
+
+  describe ":my_drafts action" do
+    setup do
+      user = Ash.Seed.seed!(Manillum.Accounts.User, %{email: "drafts_list@example.com"})
+      other = Ash.Seed.seed!(Manillum.Accounts.User, %{email: "drafts_other@example.com"})
+
+      seed = fn user_id, slug, status ->
+        Ash.Seed.seed!(Card, %{
+          user_id: user_id,
+          drawer: :ANT,
+          date_token: "1177BC",
+          slug: slug,
+          card_type: :event,
+          front: "F",
+          back: "B",
+          status: status
+        })
+      end
+
+      {:ok, user: user, other: other, seed: seed}
+    end
+
+    test "returns only the actor's :draft cards", %{user: user, other: other, seed: seed} do
+      d1 = seed.(user.id, "ALPHA", :draft)
+      _filed = seed.(user.id, "BETA", :filed)
+      _other = seed.(other.id, "GAMMA", :draft)
+
+      assert {:ok, [loaded]} = Manillum.Archive.list_drafts(actor: user)
+      assert loaded.id == d1.id
+      assert loaded.status == :draft
+    end
+
+    test "loads call_number and capture", %{user: user, seed: seed} do
+      _ = seed.(user.id, "DELTA", :draft)
+
+      assert {:ok, [loaded]} = Manillum.Archive.list_drafts(actor: user)
+      assert loaded.call_number == "ANT · 1177BC · DELTA"
+      # capture is a belongs_to; nil here because the seed didn't set capture_id
+      assert Map.has_key?(loaded, :capture)
+    end
+  end
 end

@@ -1,42 +1,66 @@
 /* ─────────────────────────────────────────────────────────────────────────
-   .filing_tray — the right-side drawer that slides in while cataloging is
-   running. Two states:
-     • drafting (slim, ~240px wide, paper-deep ground, skeleton cards)
-     • review  (expanded ~380px, oxblood "FILE ALL" header, draft cards)
+   .filing_tray — chrome-free rail in the right column of a conversation.
+   No background, no border-left: just a labeled region the parent column
+   ground shows through. The rail is persistent and the body adapts to
+   one of three states: :empty, :drafting, :review.
 
-   The tray is anchored to the right edge of the page; its left edge has a
-   subtle inset shadow to suggest it sits "on top" of the page.
+   Markup pattern (parent owns the column width via `.filing_tray__container`
+   in conversation.css):
+
+     <aside class="filing_tray filing_tray--review">
+       <header class="filing_tray__head">
+         <div class="filing_tray__kicker">★ FILING TRAY · 3 <button class="filing_tray__close">hide ×</button></div>
+         <div class="filing_tray__sub">Drafts from QRY № 0089. …</div>
+         <div class="filing_tray__actions">…</div>
+       </header>
+       <div class="filing_tray__body">…</div>
+     </aside>
    ───────────────────────────────────────────────────────────────────── */
 
 .filing_tray {
-  background: var(--color-paper-deep);
-  border-left: 1px solid var(--color-rule-strong);
-  box-shadow: -8px 0 22px rgba(40, 32, 18, 0.05);
   display: flex;
   flex-direction: column;
   height: 100%;
+  padding: 1rem 1rem 0rem 0.75rem;
+  background: transparent;
+  border: 0;
+  /* Width + opacity animate together when --dismissed flips. The padding
+   * collapses too so the rail's content tracks the rail edge as it slides
+   * out — without it, the inner padding holds visible space until the
+   * very end of the transition. */
+  transition:
+    width 260ms ease,
+    opacity 200ms ease,
+    padding 260ms ease;
+}
+
+/* `overflow: hidden` is scoped to the dismissed state so the spine-
+ * collapse animation clips the rail's content as width transitions to
+ * 0. We deliberately keep the open rail's overflow visible — the
+ * discard exit animation translates draft cards past the right edge of
+ * the rail, and we want that to render. */
+.filing_tray__container--dismissed .filing_tray {
+  overflow: hidden;
+}
+
+.filing_tray--empty,
+.filing_tray--drafting {
+  width: 20rem;
 }
 
 .filing_tray--review {
-  box-shadow: -8px 0 22px rgba(40, 32, 18, 0.10);
-  width: 24rem;
-}
-
-.filing_tray--draft {
-  width: 15rem;
+  width: 23rem;
 }
 
 .filing_tray__head {
-  padding: 1rem 1.25rem 0.75rem;
-  border-bottom: 1px solid var(--color-rule);
-  background: var(--color-paper);
+  margin-bottom: 0.625rem;
 }
 
 .filing_tray__kicker {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  margin-bottom: 0.25rem;
+  margin-bottom: 0.375rem;
   font-family: var(--font-mono);
   font-size: var(--text-mono-xs);
   letter-spacing: var(--tracking-mono-extra);
@@ -44,10 +68,10 @@
   text-transform: uppercase;
 }
 
-.filing_tray__kicker .filing_tray__close {
+.filing_tray__close {
   color: var(--color-ink-faint);
   letter-spacing: var(--tracking-mono);
-  text-transform: none;
+  text-transform: uppercase;
   background: transparent;
   border: 0;
   font-family: inherit;
@@ -68,59 +92,545 @@
   height: 0.75rem;
 }
 
-.filing_tray__title {
-  font-family: var(--font-display);
-  font-size: 1.0625rem;
-  font-weight: 500;
-  line-height: 1.2;
-  color: var(--color-ink);
-  margin-top: 0.125rem;
-}
-
 .filing_tray__sub {
   font-family: var(--font-body);
   font-style: italic;
-  font-size: 0.71875rem;
-  color: var(--color-ink-faint);
-  margin-top: 0.125rem;
-  line-height: 1.45;
+  font-size: 0.78125rem;
+  color: var(--color-ink-soft);
+  line-height: 1.5;
+  margin-bottom: 0.875rem;
 }
 
 .filing_tray__actions {
   display: flex;
   gap: 0.375rem;
-  margin-top: 0.5rem;
+  margin-top: 0.25rem;
+  margin-bottom: 0.875rem;
   align-items: center;
 }
 
 .filing_tray__body {
   flex: 1;
-  padding: 0.875rem;
+  min-height: 0;
   overflow-y: auto;
+  /* Explicit overflow-x avoids the spec coercion: setting overflow-y:
+   * auto with the default overflow-x: visible forces overflow-x to auto
+   * too (a horizontal scrollbar would appear when the discard exit
+   * animation slides a card off the right edge). `hidden` clips cleanly. */
+  overflow-x: hidden;
 }
 
-/* Skeleton draft block — uses .card--draft, but the loading bars live here
-   because they're skeleton-specific, not card-specific. */
-.skeleton_bar {
-  height: 0.4375rem;
-  background: var(--color-rule-faint);
+/* Container in the conversation grid. Always rendered (so Phoenix
+   LV streams stay mounted and don't lose items on dismiss/reopen);
+   CSS handles the actual hide. */
+.filing_tray__container {
+  display: flex;
+  align-items: stretch;
+  height: 100%;
+}
+
+/* No drafts, no failure, nothing in flight → collapse to zero width. */
+.filing_tray__container--empty {
+  display: none;
+}
+
+/* Dismissed: width-collapse the tray (animated) so the rail slides out
+   to the right edge while the spine slides in from it. `display: none`
+   would skip the transition entirely. */
+.filing_tray__container--dismissed .filing_tray {
+  width: 0;
+  opacity: 0;
+  padding-left: 0;
+  padding-right: 0;
+  pointer-events: none;
+}
+
+/* Dismissed-state spine — full-height 22px-wide column flush to the right
+   edge of the conversation. A single 1px oxblood-tinted rule on its left
+   edge separates it from the chat; one centered line of vertical rotated
+   mono text reads `★ Filing tray · N · show ›`. The whole spine is
+   clickable. No background, no button chrome — matches the no-chrome
+   direction of the open rail.
+
+   The spine is always rendered when the tray has anything to surface;
+   CSS hides it (width 0, opacity 0) until the container picks up the
+   --dismissed modifier. Width + opacity transition match the tray's
+   own transition so the two trade places smoothly. */
+.filing_tray__spine {
+  position: relative;
+  width: 0;
+  height: 100%;
+  opacity: 0;
+  overflow: hidden;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  pointer-events: none;
+  transition:
+    width 260ms ease,
+    opacity 200ms ease;
+}
+
+.filing_tray__container--dismissed .filing_tray__spine {
+  width: 1.375rem;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.filing_tray__spine-rule {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 1px;
+  background: rgba(94, 26, 26, 0.35);
+}
+
+.filing_tray__spine-label {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  /* Read bottom-up: writing-mode rotates the glyphs, the 180° rotate flips
+   * the line direction so it reads from bottom (★) to top (›). */
+  transform: translate(-50%, -50%) rotate(180deg);
+  writing-mode: vertical-rl;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-xs);
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--color-oxblood);
+}
+
+.filing_tray__spine:hover .filing_tray__spine-rule {
+  background: var(--color-oxblood);
+}
+
+.filing_tray__spine:hover .filing_tray__spine-label {
+  color: var(--color-ink);
+}
+
+/* Draft cards in the rail keep their own .card--draft chrome (oxblood
+   top-rule, paper-light ground); the rail is the only thing that lost
+   its panel. Spacing between drafts. */
+.filing_tray__draft + .filing_tray__draft {
+  margin-top: 0.625rem;
+}
+
+/* Provenance line under the call_number on each draft — `QRY № 0089`
+ * for whole-message captures, `QRY № 0089 · ¶ 3` for selection
+ * captures (paragraph index resolved at render time from the source
+ * text's position in the message). Mono kicker, faded ink, sits
+ * tight under the call_number without competing visually. */
+.filing_tray__draft-provenance {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-xs);
+  letter-spacing: var(--tracking-mono);
+  color: var(--color-ink-faint);
+  text-transform: uppercase;
+  margin-top: 0.125rem;
+  margin-bottom: 0.25rem;
+}
+
+/* Discard exit animation — applied via `phx-remove`
+   (JS.transition "filing_tray__draft--discarding", time: 280) so
+   Phoenix's transition tracker holds the DOM removal until the
+   animation has finished playing. The card slides out to the right
+   and fades. `forwards` keeps the end state so the element doesn't
+   snap back to opacity:1 during the small remaining hold. */
+@keyframes filing_tray_draft_discard {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(110%);
+    opacity: 0;
+  }
+}
+
+.filing_tray__draft--discarding {
+  animation: filing_tray_draft_discard 260ms ease-in forwards;
+  pointer-events: none;
+}
+
+/* File exit animation — applied via JS.add_class on the file pill click
+ * (see `FilingTrayComponent.file_click/3`). Plays in three beats:
+ *   0–280ms   FILED stamp lands on the card with an overshoot, settles
+ *   280–700ms hold so the eye reads the stamp
+ *   700–1100ms slide off-rail to the right with a fade
+ * The article needs `position: relative` for the ::after stamp overlay
+ * to anchor against it. Pointer-events disabled so the user can't fire
+ * file again while the animation runs. The class is removed when the
+ * server `stream_delete`s the article (after 1100ms via the parent LV's
+ * `Process.send_after`). */
+.filing_tray__draft--filing {
+  position: relative;
+  animation: filing_tray_draft_file 1100ms ease-out forwards;
+  pointer-events: none;
+}
+
+@keyframes filing_tray_draft_file {
+  0% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  64% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(110%);
+    opacity: 0;
+  }
+}
+
+.filing_tray__draft--filing::after {
+  content: "FILED";
+  position: absolute;
+  top: 36%;
+  left: 50%;
+  z-index: 2;
+  font-family: var(--font-mono);
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: var(--tracking-mono-extra);
+  color: var(--color-oxblood);
+  border: 2px solid var(--color-oxblood);
+  padding: 0.25rem 0.625rem;
+  background: rgba(245, 240, 230, 0.92);
+  pointer-events: none;
+  animation: filing_tray_filed_stamp 1100ms ease-out forwards;
+  transform-origin: center;
+}
+
+@keyframes filing_tray_filed_stamp {
+  0% {
+    transform: translate(-50%, -50%) rotate(-8deg) scale(0);
+    opacity: 0;
+  }
+  14% {
+    transform: translate(-50%, -50%) rotate(-8deg) scale(1.35);
+    opacity: 1;
+  }
+  26% {
+    transform: translate(-50%, -50%) rotate(-8deg) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -50%) rotate(-8deg) scale(1);
+    opacity: 1;
+  }
+}
+
+.filing_tray__draft-head {
+  display: flex;
+  justify-content: space-between;
   margin-bottom: 0.3125rem;
 }
 
-.skeleton_bar--80 { width: 80%; }
-.skeleton_bar--95 { width: 95%; }
-.skeleton_bar--60 { width: 60%; }
-
-@keyframes manillum_pulse {
-  0%, 100% { opacity: 0.6; }
-  50%      { opacity: 1; }
+.filing_tray__draft-front {
+  font-family: var(--font-display);
+  font-size: 0.875rem;
+  font-weight: 500;
+  margin: 0.3125rem 0;
+  line-height: 1.25;
 }
 
-.cataloging_indicator {
+.filing_tray__draft-back {
+  font-family: var(--font-body);
+  font-size: 0.78125rem;
+  line-height: 1.45;
+  color: var(--color-ink-soft);
+}
+
+.filing_tray__draft-actions {
+  display: flex;
+  gap: 0.375rem;
+  padding-top: 0.375rem;
+  margin-top: 0.5rem;
+  border-top: 1px dotted var(--color-rule);
+}
+
+/* Duplicate-candidate block (M-65). Soft brass-italic — advisory,
+ * not blocking. Lists candidate cards by call_number; clicking one
+ * expands an inline preview of its front + back so the user can
+ * compare without leaving the rail. The file pill stays enabled —
+ * dup-detection is "this looks similar," not "this collides."
+ *
+ * Visually distinct from `.filing_tray__draft-collision` (which has
+ * a solid brass border and blocks the file pill): no border, italic
+ * copy, only the candidate's call_number is interactive. */
+.filing_tray__draft-dups {
+  margin-top: 0.5rem;
+  padding-top: 0.375rem;
+  border-top: 1px dotted var(--color-rule);
   font-family: var(--font-body);
   font-style: italic;
-  font-size: 0.6875rem;
+  font-size: 0.71875rem;
+  color: var(--color-ink-soft);
+  line-height: 1.4;
+}
+
+.filing_tray__draft-dups-head {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
   color: var(--color-brass);
-  margin-top: 0.25rem;
-  animation: manillum_pulse 1.5s ease-in-out infinite;
+  margin-bottom: 0.25rem;
+}
+
+.filing_tray__draft-dups-head [class^="hero-"] {
+  width: 0.75rem;
+  height: 0.75rem;
+  color: var(--color-brass-bright);
+}
+
+.filing_tray__draft-dups-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.filing_tray__draft-dup-toggle {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.filing_tray__draft-dup-toggle:hover .call_number {
+  color: var(--color-oxblood);
+}
+
+.filing_tray__draft-dup-preview {
+  margin: 0.25rem 0 0.125rem 0.5rem;
+  padding: 0.25rem 0 0.25rem 0.5rem;
+  border-left: 1px dotted var(--color-brass);
+  font-style: normal;
+  color: var(--color-ink);
+}
+
+.filing_tray__draft-dup-front {
+  font-family: var(--font-display);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  margin-bottom: 0.1875rem;
+}
+
+.filing_tray__draft-dup-back {
+  font-family: var(--font-body);
+  font-style: italic;
+  font-size: 0.71875rem;
+  color: var(--color-ink-soft);
+}
+
+/* Slug-collision banner (M-64). Brass-toned because the cataloging
+ * pipeline already detected the collision against a filed card; the
+ * file pill is hidden until the user resolves it (edit slug or
+ * discard). Replaces the entire bottom action row when present. */
+.filing_tray__draft-collision {
+  background: rgba(154, 122, 58, 0.14);
+  border: 1px solid var(--color-brass);
+  padding: 0.375rem 0.5rem;
+  margin: 0.375rem 0 0.5rem;
+}
+
+.filing_tray__draft-collision-body {
+  font-family: var(--font-body);
+  font-style: italic;
+  font-size: 0.71875rem;
+  color: var(--color-ink);
+  line-height: 1.4;
+}
+
+.filing_tray__draft-collision-body [class^="hero-"] {
+  width: 0.75rem;
+  height: 0.75rem;
+  color: var(--color-brass-bright);
+  vertical-align: -0.125em;
+}
+
+.filing_tray__draft-collision-actions {
+  display: flex;
+  gap: 0.375rem;
+  margin-top: 0.375rem;
+}
+
+/* Inline edit form on a draft card. Replaces the read-only front/back
+ * view in place when the user clicks the `edit` pill. The form keeps
+ * the draft card's chrome (oxblood top-rule, paper-light ground) so
+ * editing feels like marking up the same card rather than entering a
+ * different surface. Each field carries a small mono kicker label. */
+.filing_tray__edit {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.filing_tray__edit-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-end;
+}
+
+.filing_tray__edit-row--segments {
+  flex-wrap: wrap;
+}
+
+.filing_tray__edit-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1875rem;
+  flex: 0 0 auto;
+}
+
+.filing_tray__edit-label--slug {
+  flex: 1 1 auto;
+  min-width: 6rem;
+}
+
+.filing_tray__edit-label--block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1875rem;
+}
+
+.filing_tray__edit-label-text {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-xs);
+  letter-spacing: var(--tracking-mono-extra);
+  text-transform: uppercase;
+  color: var(--color-ink-faint);
+}
+
+.filing_tray__edit-input {
+  font-family: var(--font-body);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--color-ink);
+  background: var(--color-paper);
+  border: 0;
+  border-bottom: 1px solid var(--color-rule);
+  padding: 0.1875rem 0.25rem;
+  outline: none;
+  transition: border-color 120ms ease;
+}
+
+.filing_tray__edit-input:focus {
+  border-bottom-color: var(--color-oxblood);
+}
+
+.filing_tray__edit-input--date {
+  width: 5rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-sm);
+}
+
+.filing_tray__edit-input--slug {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-sm);
+  letter-spacing: var(--tracking-mono);
+  text-transform: uppercase;
+  width: 100%;
+}
+
+.filing_tray__edit-input--front,
+.filing_tray__edit-input--back {
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.filing_tray__edit-input--front {
+  font-family: var(--font-display);
+  font-size: 0.875rem;
+  font-weight: 500;
+  min-height: 4rem;
+}
+
+.filing_tray__edit-input--back {
+  min-height: 9rem;
+}
+
+.filing_tray__edit-collision {
+  font-family: var(--font-body);
+  font-style: italic;
+  font-size: 0.71875rem;
+  color: var(--color-brass);
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-top: -0.125rem;
+}
+
+.filing_tray__edit-collision [class^="hero-"] {
+  width: 0.75rem;
+  height: 0.75rem;
+  color: var(--color-brass-bright);
+}
+
+.filing_tray__failure {
+  background: rgba(154, 122, 58, 0.14);
+  border: 1px solid var(--color-brass);
+  padding: 0.375rem 0.5rem;
+  margin-bottom: 0.5rem;
+  font-family: var(--font-body);
+  font-size: 0.71875rem;
+  font-style: italic;
+  color: var(--color-ink);
+  line-height: 1.4;
+  display: flex;
+  gap: 0.375rem;
+  align-items: center;
+}
+
+.filing_tray__failure button {
+  margin-left: auto;
+  background: transparent;
+  border: 0;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+  color: var(--color-ink-faint);
+}
+
+/* ── cataloging_indicator ────────────────────────────────────────────
+   Brass mono "Cataloging…" with the same three-dot pulse as the
+   composing indicator. Used by the filing tray's :drafting state. */
+
+.cataloging_indicator {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.cataloging_indicator__head {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.cataloging_indicator__label {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-xs);
+  letter-spacing: var(--tracking-mono-extra);
+  color: var(--color-brass);
+  text-transform: uppercase;
+}
+
+.cataloging_indicator__sub {
+  font-family: var(--font-body);
+  font-style: italic;
+  font-size: 0.75rem;
+  color: var(--color-ink-faint);
+  line-height: 1.5;
 }

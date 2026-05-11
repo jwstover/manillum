@@ -44,3 +44,4 @@ npm-debug.log
 
 /.playwright-cli
 /.vscode
+/design

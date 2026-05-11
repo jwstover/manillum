@@ -63,7 +63,39 @@ defmodule Manillum.Archive.Card do
   end
 
   actions do
-    defaults [:read, :destroy]
+    defaults [:read]
+
+    read :my_drafts do
+      description """
+      Drafts visible to the current actor, newest first. Used by the
+      filing tray (Slice 10 / M-28) to render pending drafts produced by
+      the cataloging pipeline.
+      """
+
+      filter expr(user_id == ^actor(:id) and status == :draft)
+
+      prepare build(
+                sort: [inserted_at: :desc],
+                load: [
+                  :call_number,
+                  capture: [:conversation, :message],
+                  collision_card: [:call_number]
+                ]
+              )
+    end
+
+    destroy :discard do
+      description """
+      Discard a draft Card. The Capture row is left intact as audit trail
+      (per spec §5 Stream C — Captures persist after cataloging). Rejects
+      cards in any status other than `:draft`; filed cards are removed via
+      a future archive flow, not by discard.
+      """
+
+      validate attribute_equals(:status, :draft) do
+        message "Only :draft cards can be discarded (current: %{value})."
+      end
+    end
 
     create :draft do
       description """
@@ -112,6 +144,46 @@ defmodule Manillum.Archive.Card do
       end
 
       change set_attribute(:status, :filed)
+    end
+
+    update :unfile do
+      description """
+      Demote a `:filed` Card back to `:draft`. The reverse of `:file`,
+      used by the filing-tray undo path (M-28, decision 2026-05-07
+      option B — file immediately + `:unfile` on undo). Rejects any
+      current status other than `:filed`.
+
+      The partial unique index on `(user_id, drawer, date_token, slug)`
+      is scoped to `status != :draft` (Slice 6 / M-24), so flipping back
+      to `:draft` releases the constraint cleanly — a future colliding
+      draft can coexist with this one again.
+      """
+
+      accept []
+      require_atomic? false
+
+      validate attribute_equals(:status, :filed) do
+        message "Card must be in :filed status to be unfiled (current: %{value})."
+      end
+
+      change set_attribute(:status, :draft)
+    end
+
+    update :edit_content do
+      description """
+      Edit the human-readable surface of a card — `front`, `back`,
+      `card_type`, and `entities`. The call-number identity (drawer,
+      date_token, slug) is unchanged; that goes through `:rename`
+      which writes a `CallNumberRedirect` for the old segments.
+
+      Acceptable on cards in any status — drafts are mutable in the
+      filing tray, filed cards are mutable from `FileCardLive`. No
+      status validation. Use `:rename` when call-number segments are
+      part of the same edit (the LiveView fires both actions).
+      """
+
+      accept [:front, :back, :card_type, :entities]
+      require_atomic? false
     end
 
     update :rename do
@@ -271,6 +343,18 @@ defmodule Manillum.Archive.Card do
 
     belongs_to :capture, Manillum.Archive.Capture do
       public? true
+    end
+
+    # Pointer to the existing filed card whose call-number segments
+    # collide with this draft's. Mirrors `:collision_card_id`;
+    # surfaces in the filing tray as "Looks like your existing
+    # card …". Loaded explicitly by `:my_drafts` so the tray can
+    # render the colliding card's call_number without an extra fetch.
+    belongs_to :collision_card, __MODULE__ do
+      source_attribute :collision_card_id
+      destination_attribute :id
+      public? true
+      define_attribute? false
     end
 
     many_to_many :tags, Manillum.Archive.Tag do

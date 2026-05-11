@@ -42,6 +42,15 @@ defmodule Manillum.Archive.Capture do
   postgres do
     table "captures"
     repo Manillum.Repo
+
+    # Captures outlive their source Conversation / Message per spec §5
+    # Stream C — they're the audit trail of cataloging activity. On
+    # delete of the parent row, null out the FK rather than restrict
+    # (NO ACTION) so the Capture row survives as a soft orphan.
+    references do
+      reference :conversation, on_delete: :nilify
+      reference :message, on_delete: :nilify
+    end
   end
 
   oban do
@@ -201,8 +210,12 @@ defmodule Manillum.Archive.Capture do
       description "Populated when status transitions to `:failed`. Free-text reason for the filing tray to surface."
     end
 
-    # Plain UUIDs for now; will become belongs_to once the
-    # Manillum.Conversations domain lands in Stream D.
+    # The bare UUID columns are kept as attributes (no FK constraint —
+    # Capture rows long-outlive deleted conversations as audit trail
+    # per spec §5 Stream C). The `belongs_to :conversation` and
+    # `belongs_to :message` relationships below reuse these columns
+    # via `define_attribute? false` so the filing tray can load
+    # provenance (QRY № N · ¶ M) alongside drafts in one query.
     attribute :conversation_id, :uuid, public?: true
     attribute :message_id, :uuid, public?: true
 
@@ -214,6 +227,20 @@ defmodule Manillum.Archive.Capture do
     belongs_to :user, Manillum.Accounts.User do
       allow_nil? false
       public? true
+    end
+
+    belongs_to :conversation, Manillum.Conversations.Conversation do
+      source_attribute :conversation_id
+      destination_attribute :id
+      public? true
+      define_attribute? false
+    end
+
+    belongs_to :message, Manillum.Conversations.Message do
+      source_attribute :message_id
+      destination_attribute :id
+      public? true
+      define_attribute? false
     end
 
     has_many :drafts, Manillum.Archive.Card do
