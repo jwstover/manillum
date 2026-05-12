@@ -1,0 +1,30 @@
+[
+  verbose: false,
+  private: false,
+  skip: true,
+  router: "lib/manillum_web/router.ex",
+  exit: "Low",
+  threshold: "low",
+  format: "txt",
+  out: "",
+  # Globally-ignored checks (each entry needs a TODO):
+  #
+  # - Config.HTTPS:
+  #     Dev-only HTTP endpoint. Production runs behind TLS-terminating
+  #     proxy. Revisit if Manillum starts serving HTTPS directly.
+  #
+  # - Config.CSP:
+  #     TODO(security): design + install a Content-Security-Policy plug for
+  #     the :browser pipeline (router.ex). Blocked on pinning down the CSP
+  #     shape (LiveView WS origins, asset CDN, allowed inline styles).
+  #
+  # - XSS.Raw:
+  #     `ManillumWeb.ConversationsLive.to_markdown/1` calls `Phoenix.HTML.raw/1`
+  #     on `MDEx.to_html` output that has already been run through
+  #     `MDEx.Document.default_sanitize_options/0`. Sobelow can't see the
+  #     sanitizer so flags Low-Confidence. Re-enable this check the moment
+  #     the sanitizer is removed or sources of `to_markdown/1` input become
+  #     anything other than persisted assistant messages.
+  ignore: ["Config.HTTPS", "Config.CSP", "XSS.Raw"],
+  ignore_files: []
+]
