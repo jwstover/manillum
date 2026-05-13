@@ -1,0 +1,195 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   .drawers — era-based cabinet view at /drawers.
+   .drawer_show — single drawer detail at /drawers/:drawer.
+
+   Index: 7-cell grid, each cell carries a drawer code + name + era range
+   + card count, with an oxblood ring in the corner. Echoes the History
+   App design's `ADiscover` "BROWSE BY DRAWER" block.
+
+   Show: chronological list of cards inside the drawer, anchored by year.
+   ───────────────────────────────────────────────────────────────────── */
+
+.drawers,
+.drawer_show {
+  max-width: 78rem;
+  margin: 0 auto;
+  padding: 1.75rem 2rem 3rem;
+  color: var(--color-ink);
+  font-family: var(--font-body);
+}
+
+.drawers__head,
+.drawer_show__head {
+  margin-bottom: 1.75rem;
+}
+
+.drawers__title,
+.drawer_show__title {
+  font-family: var(--font-display);
+  font-size: var(--text-display-md);
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  margin: 0.375rem 0 0.25rem;
+}
+
+.drawers__lede,
+.drawer_show__lede {
+  font-family: var(--font-body);
+  font-style: italic;
+  font-size: var(--text-body-md);
+  color: var(--color-ink-faint);
+  margin: 0;
+}
+
+.drawers__lede em,
+.drawer_show__lede em {
+  font-style: normal;
+  font-weight: 500;
+  color: var(--color-ink);
+}
+
+/* ── cabinet grid ──────────────────────────────────────────────────── */
+.drawers__grid {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 0.75rem;
+}
+
+.drawers__cell {
+  display: block;
+  position: relative;
+  background: var(--color-paper-deep);
+  border: 1px solid var(--color-rule-strong);
+  padding: 0.875rem 1rem 1rem;
+  text-decoration: none;
+  color: inherit;
+  min-height: 7rem;
+}
+
+.drawers__cell:hover {
+  background: var(--color-paper-light);
+}
+
+.drawers__cell-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-xs);
+  color: var(--color-ink-faint);
+  letter-spacing: var(--tracking-mono);
+  text-transform: uppercase;
+  margin-bottom: 0.875rem;
+}
+
+.drawers__cell-name {
+  font-family: var(--font-display);
+  font-size: 1.1875rem;
+  font-weight: 500;
+  margin: 0 0 0.25rem;
+  color: var(--color-ink);
+}
+
+.drawers__cell-range {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-xs);
+  color: var(--color-ink-soft);
+  letter-spacing: var(--tracking-mono-tight);
+  margin: 0;
+}
+
+.drawers__cell-bullet {
+  position: absolute;
+  bottom: 0.625rem;
+  right: 0.75rem;
+  width: 0.75rem;
+  height: 0.75rem;
+  border: 1.5px solid var(--color-oxblood);
+  border-radius: 50%;
+}
+
+/* ── drawer show ──────────────────────────────────────────────────── */
+.drawer_show__nav {
+  display: flex;
+  gap: 0;
+  margin-top: 1rem;
+}
+
+.drawer_show__nav-link {
+  padding: 0.375rem 0.75rem;
+  border: 1px solid var(--color-rule-strong);
+  margin-left: -1px;
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-xs);
+  color: var(--color-ink-soft);
+  letter-spacing: var(--tracking-mono);
+  text-decoration: none;
+}
+
+.drawer_show__nav-link:hover {
+  background: var(--color-paper-light);
+}
+
+.drawer_show__nav-link.is-active {
+  background: var(--color-ink);
+  color: var(--color-linen);
+  border-color: var(--color-ink);
+}
+
+.drawer_show__list {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0 0;
+  border-top: 1px solid var(--color-rule-strong);
+}
+
+.drawer_show__row {
+  display: grid;
+  grid-template-columns: 6rem 1fr 14rem;
+  gap: 1.25rem;
+  align-items: baseline;
+  padding: 0.75rem 0.5rem;
+  border-bottom: 1px dotted var(--color-rule);
+  text-decoration: none;
+  color: inherit;
+}
+
+.drawer_show__row:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.drawer_show__row-year {
+  font-family: var(--font-display);
+  font-size: 1.375rem;
+  font-weight: 600;
+  color: var(--color-oxblood-bright);
+  letter-spacing: -0.01em;
+  line-height: 1;
+}
+
+.drawer_show__row-front {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  color: var(--color-ink);
+  line-height: var(--leading-tight);
+}
+
+.drawer_show__row-call {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-sm);
+  color: var(--color-ink-faint);
+  letter-spacing: var(--tracking-mono-tight);
+  text-align: right;
+}
+
+.drawer_show__empty {
+  padding: 3rem 1rem;
+  text-align: center;
+  font-family: var(--font-body);
+  font-style: italic;
+  font-size: var(--text-body-md);
+  color: var(--color-ink-faint);
+}

@@ -1,0 +1,293 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   .catalog — search-first browse view at /catalog. Search bar styled as a
+   catalog drawer label (oxblood QUERY ▸ kicker on ink ground), filter rail
+   on the left, table-style result rows on the right.
+
+   Visual cues lifted from the History App design's `ADiscover` (the
+   catalog landing — black QUERY ▸ kicker + ↵ ASK ledger) and `ACollection`
+   (the table-row CALL № · FRONT · DRAWER · FILED).
+   ───────────────────────────────────────────────────────────────────── */
+
+.catalog {
+  max-width: 78rem;
+  margin: 0 auto;
+  padding: 1.75rem 2rem 3rem;
+  color: var(--color-ink);
+  font-family: var(--font-body);
+}
+
+.catalog__head {
+  margin-bottom: 1.5rem;
+}
+
+.catalog__title {
+  font-family: var(--font-display);
+  font-size: var(--text-display-md);
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  margin: 0.375rem 0 0.25rem;
+}
+
+.catalog__lede {
+  font-family: var(--font-body);
+  font-style: italic;
+  font-size: var(--text-body-md);
+  color: var(--color-ink-faint);
+  margin: 0;
+}
+
+.catalog__lede em {
+  font-style: normal;
+  font-weight: 500;
+  color: var(--color-ink);
+}
+
+.catalog__lede-filter {
+  margin-left: 0.25rem;
+  color: var(--color-oxblood);
+}
+
+/* ── search bar — black QUERY kicker, italic input, ↵ submit ────────── */
+.catalog__search {
+  display: flex;
+  align-items: stretch;
+  border: 2px solid var(--color-ink);
+  background: var(--color-paper);
+  margin-bottom: 1.5rem;
+}
+
+.catalog__search-kicker {
+  display: flex;
+  align-items: center;
+  padding: 0.875rem 1.125rem;
+  background: var(--color-ink);
+  color: var(--color-linen);
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-sm);
+  letter-spacing: var(--tracking-mono-wide);
+  white-space: nowrap;
+}
+
+.catalog__search-input {
+  flex: 1 1 auto;
+  padding: 0.875rem 1.125rem;
+  border: none;
+  background: transparent;
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  font-style: italic;
+  color: var(--color-ink);
+}
+
+.catalog__search-input::placeholder {
+  color: var(--color-ink-faint);
+  font-style: italic;
+}
+
+.catalog__search-input:focus {
+  outline: none;
+  background: var(--color-paper-light);
+}
+
+.catalog__search-clear {
+  border: none;
+  border-left: 1px solid var(--color-rule);
+  background: transparent;
+  padding: 0.875rem 1.125rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-xs);
+  color: var(--color-ink-faint);
+  letter-spacing: var(--tracking-mono);
+  cursor: pointer;
+}
+
+.catalog__search-clear:hover {
+  color: var(--color-oxblood);
+}
+
+/* ── body grid: filter rail + results ─────────────────────────────── */
+.catalog__body {
+  display: grid;
+  grid-template-columns: 12rem 1fr;
+  gap: 2rem;
+  align-items: start;
+}
+
+@media (max-width: 56rem) {
+  .catalog__body {
+    grid-template-columns: 1fr;
+  }
+}
+
+.catalog__filters {
+  border-right: 1px solid var(--color-rule);
+  padding-right: 1.5rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-sm);
+  color: var(--color-ink-soft);
+}
+
+@media (max-width: 56rem) {
+  .catalog__filters {
+    border-right: none;
+    padding-right: 0;
+    border-bottom: 1px solid var(--color-rule);
+    padding-bottom: 1rem;
+  }
+}
+
+.catalog__filter-block + .catalog__filter-block {
+  margin-top: 1.25rem;
+}
+
+.catalog__filter-head {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-xs);
+  font-weight: 500;
+  color: var(--color-ink-faint);
+  letter-spacing: var(--tracking-mono-wide);
+  text-transform: uppercase;
+  margin: 0 0 0.5rem;
+}
+
+.catalog__filter-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.catalog__filter-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  width: 100%;
+  padding: 0.25rem 0;
+  background: transparent;
+  border: none;
+  text-align: left;
+  font-family: inherit;
+  font-size: inherit;
+  color: var(--color-ink-soft);
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.catalog__filter-item:hover {
+  color: var(--color-ink);
+}
+
+.catalog__filter-item.is-active {
+  color: var(--color-ink);
+  font-weight: 500;
+}
+
+.catalog__filter-item.is-active::before {
+  content: "▸ ";
+  color: var(--color-oxblood);
+}
+
+.catalog__filter-count {
+  color: var(--color-ink-faint);
+  font-size: var(--text-mono-xs);
+}
+
+/* ── results table ────────────────────────────────────────────────── */
+.catalog__results {
+  min-width: 0;
+}
+
+.catalog__row {
+  display: grid;
+  grid-template-columns: 14rem 1fr 6rem 5rem;
+  gap: 1rem;
+  align-items: baseline;
+  padding: 0.625rem 0.75rem;
+  border-bottom: 1px dotted var(--color-rule);
+  text-decoration: none;
+  color: inherit;
+}
+
+.catalog__row:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.catalog__row--header {
+  border-bottom: 1px solid var(--color-rule-strong);
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-xs);
+  color: var(--color-ink-faint);
+  letter-spacing: var(--tracking-mono-wide);
+  text-transform: uppercase;
+  padding: 0.5rem 0.75rem;
+}
+
+.catalog__row--header:hover {
+  background: transparent;
+}
+
+.catalog__row-call {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-md);
+  color: var(--color-oxblood);
+  letter-spacing: var(--tracking-mono-tight);
+}
+
+.catalog__row-front {
+  font-family: var(--font-display);
+  font-size: var(--text-body-lg);
+  color: var(--color-ink);
+  line-height: var(--leading-tight);
+}
+
+.catalog__row-drawer,
+.catalog__row-filed {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-xs);
+  color: var(--color-ink-faint);
+  letter-spacing: var(--tracking-mono);
+  white-space: nowrap;
+}
+
+.catalog__row-filed {
+  text-align: right;
+}
+
+.catalog__empty {
+  padding: 3rem 1rem;
+  text-align: center;
+  font-family: var(--font-body);
+  font-style: italic;
+  font-size: var(--text-body-md);
+  color: var(--color-ink-faint);
+}
+
+.catalog__empty em {
+  font-style: italic;
+  color: var(--color-ink);
+}
+
+.catalog__empty-clear,
+.catalog__empty-link {
+  background: transparent;
+  border: none;
+  font-family: var(--font-body);
+  font-style: italic;
+  font-size: var(--text-body-md);
+  color: var(--color-oxblood);
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 0.2em;
+}
+
+.catalog__foot {
+  margin-top: 1.5rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-xs);
+  color: var(--color-ink-faint);
+  letter-spacing: var(--tracking-mono-wide);
+  text-transform: uppercase;
+}
