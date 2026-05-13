@@ -1,4 +1,9 @@
 defmodule Manillum.Conversations.Conversation.Changes.GenerateName do
+  @moduledoc """
+  Generates a human-readable name for a conversation by asking the LLM to
+  summarize its early messages.
+  """
+
   use Ash.Resource.Change
   require Ash.Query
 

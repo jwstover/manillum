@@ -1,4 +1,9 @@
 defmodule Manillum.Conversations.Message do
+  @moduledoc """
+  Ash resource representing a single message in a conversation, including the
+  Oban-scheduled `:respond` trigger that generates assistant replies.
+  """
+
   use Ash.Resource,
     otp_app: :manillum,
     domain: Manillum.Conversations,
@@ -90,7 +95,9 @@ defmodule Manillum.Conversations.Message do
                :tool_calls,
                {:atomic,
                 expr(
-                  if not is_nil(^arg(:tool_calls)) do
+                  if is_nil(^arg(:tool_calls)) do
+                    tool_calls
+                  else
                     fragment(
                       "? || ?",
                       tool_calls,
@@ -99,8 +106,6 @@ defmodule Manillum.Conversations.Message do
                         {:array, :map}
                       )
                     )
-                  else
-                    tool_calls
                   end
                 )}
              )
@@ -109,7 +114,9 @@ defmodule Manillum.Conversations.Message do
                :tool_results,
                {:atomic,
                 expr(
-                  if not is_nil(^arg(:tool_results)) do
+                  if is_nil(^arg(:tool_results)) do
+                    tool_results
+                  else
                     fragment(
                       "? || ?",
                       tool_results,
@@ -118,8 +125,6 @@ defmodule Manillum.Conversations.Message do
                         {:array, :map}
                       )
                     )
-                  else
-                    tool_results
                   end
                 )}
              )

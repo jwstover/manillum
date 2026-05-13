@@ -1,4 +1,11 @@
 defmodule Manillum.Conversations do
+  @moduledoc """
+  Ash domain for chat conversations, messages, and timeline mentions.
+
+  Exposes AshAi tools the LLM can call (e.g. listing conversations, reading
+  message history, placing timeline mentions).
+  """
+
   use Ash.Domain, otp_app: :manillum, extensions: [AshAi, AshPhoenix]
 
   tools do

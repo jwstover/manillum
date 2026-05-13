@@ -278,45 +278,47 @@ defmodule ManillumWeb.FilingTrayComponent do
   def handle_event("edit_draft", %{"id" => id}, socket) do
     actor = socket.assigns.actor
 
-    with {:ok, card} <-
-           Ash.get(Card, id,
-             actor: actor,
-             load: [
-               :call_number,
-               capture: [:conversation, :message],
-               collision_card: [:call_number]
-             ]
-           ) do
-      form = build_edit_form(card)
+    case Ash.get(Card, id,
+           actor: actor,
+           load: [
+             :call_number,
+             capture: [:conversation, :message],
+             collision_card: [:call_number]
+           ]
+         ) do
+      {:ok, card} ->
+        form = build_edit_form(card)
 
-      {:noreply,
-       socket
-       |> assign(:editing, Map.put(socket.assigns.editing, id, form))
-       |> stream_insert(:drafts, card)}
-    else
-      {:error, _} -> {:noreply, socket}
+        {:noreply,
+         socket
+         |> assign(:editing, Map.put(socket.assigns.editing, id, form))
+         |> stream_insert(:drafts, card)}
+
+      {:error, _} ->
+        {:noreply, socket}
     end
   end
 
   def handle_event("cancel_edit", %{"id" => id}, socket) do
     actor = socket.assigns.actor
 
-    with {:ok, card} <-
-           Ash.get(Card, id,
-             actor: actor,
-             load: [
-               :call_number,
-               capture: [:conversation, :message],
-               collision_card: [:call_number]
-             ]
-           ) do
-      {:noreply,
-       socket
-       |> assign(:editing, Map.delete(socket.assigns.editing, id))
-       |> assign(:collisions, Map.delete(socket.assigns.collisions, id))
-       |> stream_insert(:drafts, card)}
-    else
-      {:error, _} -> {:noreply, socket}
+    case Ash.get(Card, id,
+           actor: actor,
+           load: [
+             :call_number,
+             capture: [:conversation, :message],
+             collision_card: [:call_number]
+           ]
+         ) do
+      {:ok, card} ->
+        {:noreply,
+         socket
+         |> assign(:editing, Map.delete(socket.assigns.editing, id))
+         |> assign(:collisions, Map.delete(socket.assigns.collisions, id))
+         |> stream_insert(:drafts, card)}
+
+      {:error, _} ->
+        {:noreply, socket}
     end
   end
 

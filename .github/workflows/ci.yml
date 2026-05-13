@@ -1,0 +1,229 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Cancel in-progress runs for the same branch / PR when a new commit lands.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  MIX_ENV: test
+
+jobs:
+  # Warm the deps + build caches once so the parallel check jobs below
+  # all hit a populated cache instead of fetching and compiling N times.
+  deps:
+    name: Deps & compile
+    runs-on: ubuntu-latest
+    outputs:
+      elixir-version: ${{ steps.beam.outputs.elixir-version }}
+      otp-version: ${{ steps.beam.outputs.otp-version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: beam
+        uses: erlef/setup-beam@v1
+        with:
+          version-file: .tool-versions
+          version-type: strict
+
+      - name: Cache deps
+        uses: actions/cache@v4
+        with:
+          path: deps
+          key: deps-${{ runner.os }}-${{ steps.beam.outputs.elixir-version }}-${{ steps.beam.outputs.otp-version }}-${{ hashFiles('mix.lock') }}
+          restore-keys: |
+            deps-${{ runner.os }}-${{ steps.beam.outputs.elixir-version }}-${{ steps.beam.outputs.otp-version }}-
+
+      - name: Cache _build
+        uses: actions/cache@v4
+        with:
+          path: _build
+          key: build-${{ runner.os }}-${{ steps.beam.outputs.elixir-version }}-${{ steps.beam.outputs.otp-version }}-${{ env.MIX_ENV }}-${{ hashFiles('mix.lock') }}
+          restore-keys: |
+            build-${{ runner.os }}-${{ steps.beam.outputs.elixir-version }}-${{ steps.beam.outputs.otp-version }}-${{ env.MIX_ENV }}-
+
+      - run: mix deps.get
+      - run: mix deps.compile
+
+  compile:
+    name: Compile (warnings as errors)
+    needs: deps
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: beam
+        uses: erlef/setup-beam@v1
+        with:
+          version-file: .tool-versions
+          version-type: strict
+      - uses: actions/cache/restore@v4
+        with:
+          path: deps
+          key: deps-${{ runner.os }}-${{ steps.beam.outputs.elixir-version }}-${{ steps.beam.outputs.otp-version }}-${{ hashFiles('mix.lock') }}
+          fail-on-cache-miss: true
+      - uses: actions/cache/restore@v4
+        with:
+          path: _build
+          key: build-${{ runner.os }}-${{ steps.beam.outputs.elixir-version }}-${{ steps.beam.outputs.otp-version }}-${{ env.MIX_ENV }}-${{ hashFiles('mix.lock') }}
+          fail-on-cache-miss: true
+      - run: mix compile --warnings-as-errors
+
+  format:
+    name: Format check
+    needs: deps
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: beam
+        uses: erlef/setup-beam@v1
+        with:
+          version-file: .tool-versions
+          version-type: strict
+      - uses: actions/cache/restore@v4
+        with:
+          path: deps
+          key: deps-${{ runner.os }}-${{ steps.beam.outputs.elixir-version }}-${{ steps.beam.outputs.otp-version }}-${{ hashFiles('mix.lock') }}
+          fail-on-cache-miss: true
+      - uses: actions/cache/restore@v4
+        with:
+          path: _build
+          key: build-${{ runner.os }}-${{ steps.beam.outputs.elixir-version }}-${{ steps.beam.outputs.otp-version }}-${{ env.MIX_ENV }}-${{ hashFiles('mix.lock') }}
+          fail-on-cache-miss: true
+      - run: mix format --check-formatted
+
+  unused_deps:
+    name: Unused deps
+    needs: deps
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: beam
+        uses: erlef/setup-beam@v1
+        with:
+          version-file: .tool-versions
+          version-type: strict
+      - uses: actions/cache/restore@v4
+        with:
+          path: deps
+          key: deps-${{ runner.os }}-${{ steps.beam.outputs.elixir-version }}-${{ steps.beam.outputs.otp-version }}-${{ hashFiles('mix.lock') }}
+          fail-on-cache-miss: true
+      - run: mix deps.unlock --check-unused
+
+  credo:
+    name: Credo (lint)
+    needs: deps
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: beam
+        uses: erlef/setup-beam@v1
+        with:
+          version-file: .tool-versions
+          version-type: strict
+      - uses: actions/cache/restore@v4
+        with:
+          path: deps
+          key: deps-${{ runner.os }}-${{ steps.beam.outputs.elixir-version }}-${{ steps.beam.outputs.otp-version }}-${{ hashFiles('mix.lock') }}
+          fail-on-cache-miss: true
+      - uses: actions/cache/restore@v4
+        with:
+          path: _build
+          key: build-${{ runner.os }}-${{ steps.beam.outputs.elixir-version }}-${{ steps.beam.outputs.otp-version }}-${{ env.MIX_ENV }}-${{ hashFiles('mix.lock') }}
+          fail-on-cache-miss: true
+      # `--strict` is the goal (per AGENTS.md §4), but the existing codebase has
+      # ~38 strict-mode findings to address first. Drop the flag back in once
+      # that cleanup ships.
+      - run: mix credo
+
+  sobelow:
+    name: Sobelow (security)
+    needs: deps
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: beam
+        uses: erlef/setup-beam@v1
+        with:
+          version-file: .tool-versions
+          version-type: strict
+      - uses: actions/cache/restore@v4
+        with:
+          path: deps
+          key: deps-${{ runner.os }}-${{ steps.beam.outputs.elixir-version }}-${{ steps.beam.outputs.otp-version }}-${{ hashFiles('mix.lock') }}
+          fail-on-cache-miss: true
+      - uses: actions/cache/restore@v4
+        with:
+          path: _build
+          key: build-${{ runner.os }}-${{ steps.beam.outputs.elixir-version }}-${{ steps.beam.outputs.otp-version }}-${{ env.MIX_ENV }}-${{ hashFiles('mix.lock') }}
+          fail-on-cache-miss: true
+      - run: mix sobelow --config
+
+  audit:
+    name: Dependency audit (CVE + retired)
+    needs: deps
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: beam
+        uses: erlef/setup-beam@v1
+        with:
+          version-file: .tool-versions
+          version-type: strict
+      - uses: actions/cache/restore@v4
+        with:
+          path: deps
+          key: deps-${{ runner.os }}-${{ steps.beam.outputs.elixir-version }}-${{ steps.beam.outputs.otp-version }}-${{ hashFiles('mix.lock') }}
+          fail-on-cache-miss: true
+      - uses: actions/cache/restore@v4
+        with:
+          path: _build
+          key: build-${{ runner.os }}-${{ steps.beam.outputs.elixir-version }}-${{ steps.beam.outputs.otp-version }}-${{ env.MIX_ENV }}-${{ hashFiles('mix.lock') }}
+          fail-on-cache-miss: true
+      - name: Check for retired Hex packages
+        run: mix hex.audit
+      - name: Scan for known CVEs in deps
+        run: mix deps.audit
+
+  test:
+    name: Tests
+    needs: deps
+    runs-on: ubuntu-latest
+
+    services:
+      # Match dev/test config (config/test.exs hardcodes port 5440 + pgvector image).
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5440:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+      - id: beam
+        uses: erlef/setup-beam@v1
+        with:
+          version-file: .tool-versions
+          version-type: strict
+      - uses: actions/cache/restore@v4
+        with:
+          path: deps
+          key: deps-${{ runner.os }}-${{ steps.beam.outputs.elixir-version }}-${{ steps.beam.outputs.otp-version }}-${{ hashFiles('mix.lock') }}
+          fail-on-cache-miss: true
+      - uses: actions/cache/restore@v4
+        with:
+          path: _build
+          key: build-${{ runner.os }}-${{ steps.beam.outputs.elixir-version }}-${{ steps.beam.outputs.otp-version }}-${{ env.MIX_ENV }}-${{ hashFiles('mix.lock') }}
+          fail-on-cache-miss: true
+      - run: mix test --warnings-as-errors

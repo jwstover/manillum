@@ -1,4 +1,8 @@
 defmodule Manillum.Secrets do
+  @moduledoc """
+  Provides AshAuthentication with runtime secrets (e.g. token signing key).
+  """
+
   use AshAuthentication.Secret
 
   def secret_for(

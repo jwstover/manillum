@@ -492,23 +492,7 @@ defmodule ManillumWeb.ConversationsLive do
     if @actor_required? && is_nil(socket.assigns.current_user) do
       {:noreply, put_flash(socket, :error, "You must sign in to send messages")}
     else
-      case AshPhoenix.Form.submit(socket.assigns.message_form, params: params) do
-        {:ok, message} ->
-          if socket.assigns.conversation do
-            socket
-            |> assign(:agent_responding, true)
-            |> assign_message_form()
-            |> stream_insert(:messages, message, at: 0)
-            |> then(&{:noreply, &1})
-          else
-            {:noreply,
-             socket
-             |> push_navigate(to: ~p"/conversations/#{message.conversation_id}")}
-          end
-
-        {:error, form} ->
-          {:noreply, assign(socket, :message_form, form)}
-      end
+      handle_message_submit(socket, params)
     end
   end
 
@@ -520,46 +504,11 @@ defmodule ManillumWeb.ConversationsLive do
   def handle_event("file", params, socket) do
     user = socket.assigns.current_user
 
-    cond do
-      is_nil(user) ->
-        Logger.warning("[file] rejected — no current_user")
-        {:noreply, put_flash(socket, :error, "You must sign in to file")}
-
-      true ->
-        case build_capture_attrs(params, user) do
-          {:ok, attrs} ->
-            Logger.debug(
-              "[file] submitting capture user_id=#{user.id} scope=#{attrs.scope} message_id=#{attrs.message_id} text_len=#{String.length(attrs.source_text || "")}"
-            )
-
-            case Manillum.Archive.submit(attrs, actor: user) do
-              {:ok, capture} ->
-                Logger.info(
-                  "[file] capture submitted id=#{capture.id} scope=#{capture.scope} user_id=#{user.id}"
-                )
-
-                send_update(ManillumWeb.FilingTrayComponent,
-                  id: "filing-tray",
-                  action: {:capture_submitted, %{capture_id: capture.id}}
-                )
-
-                {:noreply, put_flash(socket, :info, "Filing — drafts will appear shortly")}
-
-              {:error, err} ->
-                Logger.error(
-                  "[file] Manillum.Archive.submit failed user_id=#{user.id} params=#{inspect(params)} error=#{inspect(err, pretty: true, limit: :infinity)}"
-                )
-
-                {:noreply, put_flash(socket, :error, "Couldn't start filing. Try again.")}
-            end
-
-          {:error, reason} ->
-            Logger.warning(
-              "[file] rejected — invalid params user_id=#{user.id} reason=#{reason} params=#{inspect(params)}"
-            )
-
-            {:noreply, put_flash(socket, :error, "Couldn't file: #{reason}")}
-        end
+    if is_nil(user) do
+      Logger.warning("[file] rejected — no current_user")
+      {:noreply, put_flash(socket, :error, "You must sign in to file")}
+    else
+      submit_file(socket, params, user)
     end
   end
 
@@ -582,18 +531,7 @@ defmodule ManillumWeb.ConversationsLive do
         {:noreply, socket}
 
       {user, ids} ->
-        restored =
-          ids
-          |> Enum.flat_map(fn id ->
-            case undo_one(id, user) do
-              {:ok, drafted} ->
-                [drafted]
-
-              {:error, err} ->
-                Logger.error("[undo_file] failed id=#{id} error=#{inspect(err)}")
-                []
-            end
-          end)
+        restored = Enum.flat_map(ids, &undo_one_result(&1, user))
 
         Enum.each(restored, fn drafted ->
           send_update(ManillumWeb.FilingTrayComponent,
@@ -607,6 +545,77 @@ defmodule ManillumWeb.ConversationsLive do
   end
 
   def handle_event("undo_file", _params, socket), do: {:noreply, socket}
+
+  defp handle_message_submit(socket, params) do
+    case AshPhoenix.Form.submit(socket.assigns.message_form, params: params) do
+      {:ok, message} -> handle_message_submitted(socket, message)
+      {:error, form} -> {:noreply, assign(socket, :message_form, form)}
+    end
+  end
+
+  defp handle_message_submitted(%{assigns: %{conversation: nil}} = socket, message) do
+    {:noreply, push_navigate(socket, to: ~p"/conversations/#{message.conversation_id}")}
+  end
+
+  defp handle_message_submitted(socket, message) do
+    {:noreply,
+     socket
+     |> assign(:agent_responding, true)
+     |> assign_message_form()
+     |> stream_insert(:messages, message, at: 0)}
+  end
+
+  defp submit_file(socket, params, user) do
+    case build_capture_attrs(params, user) do
+      {:ok, attrs} ->
+        Logger.debug(
+          "[file] submitting capture user_id=#{user.id} scope=#{attrs.scope} message_id=#{attrs.message_id} text_len=#{String.length(attrs.source_text || "")}"
+        )
+
+        handle_archive_submit(socket, attrs, user, params)
+
+      {:error, reason} ->
+        Logger.warning(
+          "[file] rejected — invalid params user_id=#{user.id} reason=#{reason} params=#{inspect(params)}"
+        )
+
+        {:noreply, put_flash(socket, :error, "Couldn't file: #{reason}")}
+    end
+  end
+
+  defp handle_archive_submit(socket, attrs, user, params) do
+    case Manillum.Archive.submit(attrs, actor: user) do
+      {:ok, capture} ->
+        Logger.info(
+          "[file] capture submitted id=#{capture.id} scope=#{capture.scope} user_id=#{user.id}"
+        )
+
+        send_update(ManillumWeb.FilingTrayComponent,
+          id: "filing-tray",
+          action: {:capture_submitted, %{capture_id: capture.id}}
+        )
+
+        {:noreply, put_flash(socket, :info, "Filing — drafts will appear shortly")}
+
+      {:error, err} ->
+        Logger.error(
+          "[file] Manillum.Archive.submit failed user_id=#{user.id} params=#{inspect(params)} error=#{inspect(err, pretty: true, limit: :infinity)}"
+        )
+
+        {:noreply, put_flash(socket, :error, "Couldn't start filing. Try again.")}
+    end
+  end
+
+  defp undo_one_result(id, user) do
+    case undo_one(id, user) do
+      {:ok, drafted} ->
+        [drafted]
+
+      {:error, err} ->
+        Logger.error("[undo_file] failed id=#{id} error=#{inspect(err)}")
+        []
+    end
+  end
 
   defp undo_one(id, user) do
     with {:ok, card} <-

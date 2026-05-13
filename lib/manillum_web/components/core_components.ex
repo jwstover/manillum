@@ -81,13 +81,8 @@ defmodule ManillumWeb.CoreComponents do
 
   def flash(assigns) do
     payload = decode_flash(Phoenix.Flash.get(assigns.flash, assigns.kind))
-
-    resolved_kind = (payload && payload[:kind]) || assigns.kind
-
-    resolved_kicker =
-      (payload && payload[:kicker]) || assigns.kicker || flash_kicker(resolved_kind)
-
-    auto_ms = assigns.auto_dismiss_ms
+    resolved_kind = flash_field(payload, :kind, assigns.kind)
+    resolved_kicker = flash_field(payload, :kicker, assigns.kicker) || flash_kicker(resolved_kind)
 
     assigns =
       assigns
@@ -95,9 +90,9 @@ defmodule ManillumWeb.CoreComponents do
       |> assign(:payload, payload)
       |> assign(:resolved_kind, resolved_kind)
       |> assign(:resolved_kicker, resolved_kicker)
-      |> assign(:resolved_title, (payload && payload[:title]) || assigns.title)
+      |> assign(:resolved_title, flash_field(payload, :title, assigns.title))
       |> assign(:flash_body, payload && payload[:body])
-      |> assign(:auto_ms, auto_ms || 0)
+      |> assign(:auto_ms, assigns.auto_dismiss_ms || 0)
 
     ~H"""
     <div
@@ -217,6 +212,9 @@ defmodule ManillumWeb.CoreComponents do
   defp flash_kicker(:warn), do: "● NOTICE"
   defp flash_kicker(:error), do: "● ERROR"
   defp flash_kicker(_), do: nil
+
+  defp flash_field(nil, _key, fallback), do: fallback
+  defp flash_field(payload, key, fallback), do: payload[key] || fallback
 
   @doc """
   Renders a button with navigation support.

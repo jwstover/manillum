@@ -1,4 +1,8 @@
 defmodule ManillumWeb.AuthOverrides do
+  @moduledoc """
+  UI overrides for AshAuthentication.Phoenix components.
+  """
+
   use AshAuthentication.Phoenix.Overrides
 
   # configure your UI overrides here

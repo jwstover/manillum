@@ -1,4 +1,9 @@
 defmodule Manillum.Accounts.Token do
+  @moduledoc """
+  AshAuthentication token resource: stores JTIs, expirations, and revocations
+  used by the authentication flow.
+  """
+
   use Ash.Resource,
     otp_app: :manillum,
     domain: Manillum.Accounts,

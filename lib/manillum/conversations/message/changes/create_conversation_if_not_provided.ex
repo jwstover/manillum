@@ -1,4 +1,9 @@
 defmodule Manillum.Conversations.Message.Changes.CreateConversationIfNotProvided do
+  @moduledoc """
+  Creates a new conversation for a message when one isn't already provided,
+  then attaches the new conversation id to the message changeset.
+  """
+
   use Ash.Resource.Change
 
   @impl true

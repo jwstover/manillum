@@ -203,7 +203,7 @@ defmodule ManillumWeb.ConversationsLiveTest do
 
       html =
         view
-        |> element(~s(button.action_pill[phx-click="file"][phx-value-scope="whole"]))
+        |> element(~s(button[phx-click="file"][phx-value-scope="whole"]))
         |> render_click()
 
       assert html =~ "Filing — drafts will appear shortly"

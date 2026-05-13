@@ -197,9 +197,7 @@ defmodule Manillum.Conversations.Conversation.NamePrompt do
   # ── Helpers ─────────────────────────────────────────────────────────
 
   defp format_messages(messages) do
-    messages
-    |> Enum.map(&format_message/1)
-    |> Enum.join("\n")
+    Enum.map_join(messages, "\n", &format_message/1)
   end
 
   defp format_message(%{role: role, content: content}) when role in [:user, "user"],
