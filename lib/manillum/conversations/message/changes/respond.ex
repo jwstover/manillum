@@ -1,4 +1,9 @@
 defmodule Manillum.Conversations.Message.Changes.Respond do
+  @moduledoc """
+  Generates an assistant response to a user message via the configured LLM
+  and appends it to the conversation.
+  """
+
   use Ash.Resource.Change
   require Ash.Query
   require Logger
@@ -7,32 +12,146 @@ defmodule Manillum.Conversations.Message.Changes.Respond do
 
   @impl true
   def change(changeset, _opts, context) do
-    Ash.Changeset.before_transaction(changeset, fn changeset ->
-      message = changeset.data
+    Ash.Changeset.before_transaction(changeset, &run_respond(&1, context))
+  end
 
-      messages =
-        Manillum.Conversations.Message
-        |> Ash.Query.filter(conversation_id == ^message.conversation_id)
-        |> Ash.Query.filter(id != ^message.id)
-        |> Ash.Query.select([:content, :role, :tool_calls, :tool_results])
-        |> Ash.Query.sort(inserted_at: :asc)
-        |> Ash.read!(scope: context)
-        |> Enum.concat([%{role: :user, content: message.content}])
+  defp run_respond(changeset, context) do
+    message = changeset.data
+    prompt_messages = build_prompt_messages(message, context)
+    new_message_id = Ash.UUIDv7.generate()
 
-      prompt_messages = [Context.system(system_prompt())] ++ message_chain(messages)
+    upsert_pending_response(new_message_id, message)
 
-      new_message_id = Ash.UUIDv7.generate()
+    final_state = stream_response(prompt_messages, new_message_id, message, context)
+    finalize_response(final_state, new_message_id, message)
 
-      # Pre-create the in-progress assistant message row so tools called
-      # mid-stream can FK-reference it via `message_id`.
-      #
-      # Without this, tools that fire **before** the first content chunk
-      # (Livy's `place_event_on_timeline` will sometimes lead the response
-      # with a tool call) hit a FK violation on `mentions.message_id`,
-      # because the assistant row isn't persisted until the content
-      # branch of this reduce sees its first chunk. The pre-create lands
-      # an empty row with `complete: false` that subsequent
-      # `:upsert_response` calls update in place via `atomic_update`.
+    changeset
+  end
+
+  defp build_prompt_messages(message, context) do
+    history =
+      Manillum.Conversations.Message
+      |> Ash.Query.filter(conversation_id == ^message.conversation_id)
+      |> Ash.Query.filter(id != ^message.id)
+      |> Ash.Query.select([:content, :role, :tool_calls, :tool_results])
+      |> Ash.Query.sort(inserted_at: :asc)
+      |> Ash.read!(scope: context)
+      |> Enum.concat([%{role: :user, content: message.content}])
+
+    [Context.system(system_prompt())] ++ message_chain(history)
+  end
+
+  # Pre-create the in-progress assistant message row so tools called
+  # mid-stream can FK-reference it via `message_id`.
+  #
+  # Without this, tools that fire **before** the first content chunk
+  # (Livy's `place_event_on_timeline` will sometimes lead the response
+  # with a tool call) hit a FK violation on `mentions.message_id`,
+  # because the assistant row isn't persisted until the content
+  # branch of this reduce sees its first chunk. The pre-create lands
+  # an empty row with `complete: false` that subsequent
+  # `:upsert_response` calls update in place via `atomic_update`.
+  defp upsert_pending_response(new_message_id, message) do
+    Manillum.Conversations.Message
+    |> Ash.Changeset.for_create(
+      :upsert_response,
+      %{
+        id: new_message_id,
+        response_to_id: message.id,
+        conversation_id: message.conversation_id,
+        content: ""
+      },
+      actor: %AshAi{}
+    )
+    |> Ash.create!()
+  end
+
+  defp stream_response(prompt_messages, new_message_id, message, context) do
+    # Inject `current_conversation_id` / `current_message_id` into the
+    # tool-loop's action context so tools that need to reference the
+    # in-progress turn (e.g. `Mention.:place_event_on_timeline`) can pull
+    # them from the changeset's context. Tools never trust the LLM to
+    # supply these.
+    #
+    # Shape note: AshAi.ToolLoop's `context:` option is forwarded
+    # verbatim to the tool action's `context:` opt — and from there into
+    # `Ash.Changeset.for_create(..., context: ...)`, which lands at
+    # `changeset.context`. So the keys here must be **flat** (not nested
+    # under `:context`); the consumer (`SetConversationFromContext`)
+    # reads `changeset.context.current_conversation_id` directly.
+    # `actor` and `tenant` are passed separately to ToolLoop and don't
+    # need to live in this map.
+    loop_context = %{
+      current_conversation_id: message.conversation_id,
+      current_message_id: new_message_id
+    }
+
+    prompt_messages
+    |> AshAi.ToolLoop.stream(
+      otp_app: :manillum,
+      tools: true,
+      model: "anthropic:claude-sonnet-4-5",
+      actor: context.actor,
+      tenant: context.tenant,
+      context: loop_context
+    )
+    |> Enum.reduce(
+      %{content: "", tool_calls: [], tool_results: [], stream_error: nil},
+      &reduce_stream_event(&1, &2, new_message_id, message)
+    )
+  end
+
+  defp reduce_stream_event({:content, content}, acc, new_message_id, message) do
+    persist_content_chunk(content, new_message_id, message)
+    %{acc | content: acc.content <> (content || "")}
+  end
+
+  defp reduce_stream_event({:tool_call, tool_call}, acc, _new_message_id, _message) do
+    %{acc | tool_calls: append_event(acc.tool_calls, tool_call)}
+  end
+
+  defp reduce_stream_event(
+         {:tool_result, %{id: id, result: result}},
+         acc,
+         _new_message_id,
+         _message
+       ) do
+    %{acc | tool_results: append_event(acc.tool_results, normalize_tool_result(id, result))}
+  end
+
+  defp reduce_stream_event({:error, reason}, acc, new_message_id, message) do
+    Logger.error(
+      "[Respond] streaming error from AshAi.ToolLoop conversation_id=#{message.conversation_id} message_id=#{new_message_id} reason=#{inspect(reason, pretty: true, limit: :infinity)}"
+    )
+
+    %{acc | stream_error: reason}
+  end
+
+  defp reduce_stream_event(_other, acc, _new_message_id, _message), do: acc
+
+  defp persist_content_chunk(content, _new_message_id, _message) when content in [nil, ""],
+    do: :ok
+
+  defp persist_content_chunk(content, new_message_id, message) do
+    Manillum.Conversations.Message
+    |> Ash.Changeset.for_create(
+      :upsert_response,
+      %{
+        id: new_message_id,
+        response_to_id: message.id,
+        conversation_id: message.conversation_id,
+        content: content
+      },
+      actor: %AshAi{}
+    )
+    |> Ash.create!()
+  end
+
+  defp finalize_response(final_state, new_message_id, message) do
+    stream_error_text = stream_error_text(final_state.stream_error)
+    final_content = resolve_final_content(final_state, stream_error_text)
+
+    if should_upsert_final?(final_state, final_content) do
       Manillum.Conversations.Message
       |> Ash.Changeset.for_create(
         :upsert_response,
@@ -40,124 +159,34 @@ defmodule Manillum.Conversations.Message.Changes.Respond do
           id: new_message_id,
           response_to_id: message.id,
           conversation_id: message.conversation_id,
-          content: ""
+          complete: true,
+          tool_calls: final_state.tool_calls,
+          tool_results: final_state.tool_results,
+          content: final_content
         },
         actor: %AshAi{}
       )
       |> Ash.create!()
+    end
+  end
 
-      # Inject `current_conversation_id` / `current_message_id` into the
-      # tool-loop's action context so tools that need to reference the
-      # in-progress turn (e.g. `Mention.:place_event_on_timeline`) can pull
-      # them from the changeset's context. Tools never trust the LLM to
-      # supply these.
-      #
-      # Shape note: AshAi.ToolLoop's `context:` option is forwarded
-      # verbatim to the tool action's `context:` opt — and from there into
-      # `Ash.Changeset.for_create(..., context: ...)`, which lands at
-      # `changeset.context`. So the keys here must be **flat** (not nested
-      # under `:context`); the consumer (`SetConversationFromContext`)
-      # reads `changeset.context.current_conversation_id` directly.
-      # `actor` and `tenant` are passed separately to ToolLoop and don't
-      # need to live in this map.
-      loop_context = %{
-        current_conversation_id: message.conversation_id,
-        current_message_id: new_message_id
-      }
+  defp resolve_final_content(final_state, stream_error_text) do
+    has_content? = String.trim(final_state.content || "") != ""
+    has_tool_events? = final_state.tool_calls != [] || final_state.tool_results != []
 
-      final_state =
-        prompt_messages
-        |> AshAi.ToolLoop.stream(
-          otp_app: :manillum,
-          tools: true,
-          model: "anthropic:claude-sonnet-4-5",
-          actor: context.actor,
-          tenant: context.tenant,
-          context: loop_context
-        )
-        |> Enum.reduce(%{content: "", tool_calls: [], tool_results: [], stream_error: nil}, fn
-          {:content, content}, acc ->
-            if content not in [nil, ""] do
-              Manillum.Conversations.Message
-              |> Ash.Changeset.for_create(
-                :upsert_response,
-                %{
-                  id: new_message_id,
-                  response_to_id: message.id,
-                  conversation_id: message.conversation_id,
-                  content: content
-                },
-                actor: %AshAi{}
-              )
-              |> Ash.create!()
-            end
+    cond do
+      stream_error_text && has_content? -> final_state.content <> "\n\n" <> stream_error_text
+      stream_error_text -> stream_error_text
+      not has_content? and has_tool_events? -> "Completed tool call."
+      true -> final_state.content
+    end
+  end
 
-            %{acc | content: acc.content <> (content || "")}
-
-          {:tool_call, tool_call}, acc ->
-            %{acc | tool_calls: append_event(acc.tool_calls, tool_call)}
-
-          {:tool_result, %{id: id, result: result}}, acc ->
-            %{
-              acc
-              | tool_results: append_event(acc.tool_results, normalize_tool_result(id, result))
-            }
-
-          {:error, reason}, acc ->
-            Logger.error(
-              "[Respond] streaming error from AshAi.ToolLoop conversation_id=#{message.conversation_id} message_id=#{new_message_id} reason=#{inspect(reason, pretty: true, limit: :infinity)}"
-            )
-
-            %{acc | stream_error: reason}
-
-          {:done, _}, acc ->
-            acc
-
-          _, acc ->
-            acc
-        end)
-
-      stream_error_text = stream_error_text(final_state.stream_error)
-
-      final_content =
-        cond do
-          stream_error_text && String.trim(final_state.content || "") != "" ->
-            final_state.content <> "\n\n" <> stream_error_text
-
-          stream_error_text ->
-            stream_error_text
-
-          String.trim(final_state.content || "") == "" &&
-              (final_state.tool_calls != [] || final_state.tool_results != []) ->
-            "Completed tool call."
-
-          true ->
-            final_state.content
-        end
-
-      if final_state.stream_error ||
-           final_state.tool_calls != [] ||
-           final_state.tool_results != [] ||
-           final_content != "" do
-        Manillum.Conversations.Message
-        |> Ash.Changeset.for_create(
-          :upsert_response,
-          %{
-            id: new_message_id,
-            response_to_id: message.id,
-            conversation_id: message.conversation_id,
-            complete: true,
-            tool_calls: final_state.tool_calls,
-            tool_results: final_state.tool_results,
-            content: final_content
-          },
-          actor: %AshAi{}
-        )
-        |> Ash.create!()
-      end
-
-      changeset
-    end)
+  defp should_upsert_final?(final_state, final_content) do
+    final_state.stream_error ||
+      final_state.tool_calls != [] ||
+      final_state.tool_results != [] ||
+      final_content != ""
   end
 
   defp system_prompt do

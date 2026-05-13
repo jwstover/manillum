@@ -1,4 +1,8 @@
 defmodule Manillum.Accounts do
+  @moduledoc """
+  Ash domain for user accounts and authentication tokens.
+  """
+
   use Ash.Domain, otp_app: :manillum, extensions: [AshAdmin.Domain]
 
   admin do

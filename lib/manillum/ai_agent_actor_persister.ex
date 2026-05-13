@@ -1,4 +1,9 @@
 defmodule Manillum.AiAgentActorPersister do
+  @moduledoc """
+  AshOban actor persister that stores/loads the user actor for background
+  AI agent jobs and tags lookups with `chat_agent?: true` metadata.
+  """
+
   use AshOban.ActorPersister
 
   def store(%Manillum.Accounts.User{id: id}), do: %{"type" => "user", "id" => id}

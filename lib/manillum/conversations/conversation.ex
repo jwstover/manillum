@@ -1,4 +1,9 @@
 defmodule Manillum.Conversations.Conversation do
+  @moduledoc """
+  Ash resource representing a chat conversation: a thread of messages owned
+  by a user, with an Oban-driven background action for naming.
+  """
+
   use Ash.Resource,
     otp_app: :manillum,
     domain: Manillum.Conversations,

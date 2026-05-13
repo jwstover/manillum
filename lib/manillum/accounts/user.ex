@@ -1,4 +1,9 @@
 defmodule Manillum.Accounts.User do
+  @moduledoc """
+  Ash resource representing an authenticated user, configured with
+  AshAuthentication strategies (magic link).
+  """
+
   use Ash.Resource,
     otp_app: :manillum,
     domain: Manillum.Accounts,
