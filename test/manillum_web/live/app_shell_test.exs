@@ -9,24 +9,26 @@ defmodule ManillumWeb.AppShellTest do
 
   import Phoenix.LiveViewTest
 
-  # Routes that render the M-32 stub_page (placeholder copy + back-to-today link).
+  # Routes that still render the M-32 stub_page (placeholder copy + back-to-today link).
   @stub_routes [
     {"/conversations/new", "conversations"},
-    {"/catalog", "catalog"},
-    {"/drawers", "drawers"},
-    {"/drawers/antiquity", "drawers"},
-    {"/reference", "reference"},
-    {"/cards/00000000-0000-0000-0000-000000000000", "catalog"},
     {"/quiz", "quiz"}
   ]
 
   # Real LiveViews wrapped in the same shell — exercise the active-tab
-  # indicator without requiring the placeholder copy.
+  # indicator without requiring the placeholder copy. The browse views
+  # below ship in Stream F / M-29.
   @real_routes [
     {"/", "today"},
-    {"/conversations", "conversations"}
+    {"/conversations", "conversations"},
+    {"/catalog", "catalog"},
+    {"/drawers", "drawers"},
+    {"/drawers/ANT", "drawers"},
+    {"/reference", "reference"}
   ]
 
+  # /cards/:id is real but needs a seeded card (or it push_navigates to
+  # /catalog on not-found). Auth gate is tested separately below.
   @all_routes @real_routes ++ @stub_routes
 
   describe "auth gate" do
@@ -35,6 +37,11 @@ defmodule ManillumWeb.AppShellTest do
         conn = get(conn, unquote(path))
         assert redirected_to(conn) =~ "/sign-in"
       end
+    end
+
+    test "GET /cards/:id redirects unauthenticated users to sign-in", %{conn: conn} do
+      conn = get(conn, "/cards/00000000-0000-0000-0000-000000000000")
+      assert redirected_to(conn) =~ "/sign-in"
     end
   end
 

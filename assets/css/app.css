@@ -97,6 +97,10 @@
 @import "./components/conversation.css";
 @import "./components/composer.css";
 @import "./components/stub_page.css";
+@import "./components/catalog.css";
+@import "./components/drawers.css";
+@import "./components/reference.css";
+@import "./components/card_detail.css";
 
 /* ── Body baseline — Newsreader, ink on linen */
 html, body {

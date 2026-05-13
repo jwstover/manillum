@@ -226,6 +226,238 @@ defmodule Manillum.Archive do
     end)
   end
 
+  @doc """
+  List a user's filed cards, newest first. Supports an optional
+  free-text `:query` (matches `slug` / `front` / `back` / any entry in
+  `entities` case-insensitively), drawer/card_type/tag_id filters,
+  and `:limit` / `:offset` for pagination. Loads `:call_number` so
+  callers can render the boxed identifier without a follow-up
+  calculation. Returns `[]` on no matches.
+
+  Used by `CatalogLive` (search + filter) and as the underlying read
+  for drawer-scoped and tag-scoped views.
+  """
+  @spec list_filed_cards(Ash.UUID.t(), keyword()) :: [Manillum.Archive.Card.t()]
+  def list_filed_cards(user_id, opts \\ []) when is_binary(user_id) do
+    require Ash.Query
+
+    query = Keyword.get(opts, :query)
+    drawer = Keyword.get(opts, :drawer)
+    card_type = Keyword.get(opts, :card_type)
+    tag_id = Keyword.get(opts, :tag_id)
+    limit = Keyword.get(opts, :limit)
+    offset = Keyword.get(opts, :offset, 0)
+    sort = Keyword.get(opts, :sort, :recent)
+
+    Manillum.Archive.Card
+    |> Ash.Query.filter(user_id == ^user_id and status == :filed)
+    |> maybe_filter_query(query)
+    |> maybe_filter_drawer(drawer)
+    |> maybe_filter_card_type(card_type)
+    |> maybe_filter_tag(tag_id)
+    |> apply_sort(sort)
+    |> Ash.Query.load([:call_number, :tags])
+    |> maybe_paginate(limit, offset)
+    |> Ash.read!(authorize?: false)
+  end
+
+  defp maybe_filter_query(query, nil), do: query
+  defp maybe_filter_query(query, ""), do: query
+
+  defp maybe_filter_query(query, q) when is_binary(q) do
+    require Ash.Query
+    pattern = "%" <> String.replace(q, ~r/[%_]/, "") <> "%"
+
+    Ash.Query.filter(
+      query,
+      ilike(slug, ^pattern) or ilike(front, ^pattern) or ilike(back, ^pattern)
+    )
+  end
+
+  defp maybe_filter_drawer(query, nil), do: query
+
+  defp maybe_filter_drawer(query, drawer) when is_atom(drawer) do
+    require Ash.Query
+    Ash.Query.filter(query, drawer == ^drawer)
+  end
+
+  defp maybe_filter_card_type(query, nil), do: query
+
+  defp maybe_filter_card_type(query, card_type) when is_atom(card_type) do
+    require Ash.Query
+    Ash.Query.filter(query, card_type == ^card_type)
+  end
+
+  defp maybe_filter_tag(query, nil), do: query
+
+  defp maybe_filter_tag(query, tag_id) when is_binary(tag_id) do
+    require Ash.Query
+    Ash.Query.filter(query, exists(tags, id == ^tag_id))
+  end
+
+  defp apply_sort(query, :recent) do
+    require Ash.Query
+    Ash.Query.sort(query, inserted_at: :desc)
+  end
+
+  defp apply_sort(query, :call_number) do
+    require Ash.Query
+    Ash.Query.sort(query, drawer: :asc, date_token: :asc, slug: :asc)
+  end
+
+  defp apply_sort(query, _), do: apply_sort(query, :recent)
+
+  defp maybe_paginate(query, nil, _offset), do: query
+
+  defp maybe_paginate(query, limit, offset) when is_integer(limit) do
+    require Ash.Query
+
+    query
+    |> Ash.Query.limit(limit)
+    |> Ash.Query.offset(offset)
+  end
+
+  @doc """
+  Returns a map `%{drawer_atom => count}` of filed cards per drawer
+  for the user. Drawers with zero filed cards are still represented
+  (count `0`). Used by `DrawersLive` (cabinet index view).
+  """
+  @spec drawer_counts(Ash.UUID.t()) :: %{atom() => non_neg_integer()}
+  def drawer_counts(user_id) when is_binary(user_id) do
+    require Ash.Query
+
+    counts =
+      Manillum.Archive.Card
+      |> Ash.Query.filter(user_id == ^user_id and status == :filed)
+      |> Ash.Query.select([:drawer])
+      |> Ash.read!(authorize?: false)
+      |> Enum.frequencies_by(& &1.drawer)
+
+    Map.merge(Map.from_keys([:ANT, :CLA, :MED, :REN, :EAR, :MOD, :CON], 0), counts)
+  end
+
+  @doc """
+  Returns the count of a user's filed cards by `card_type`. Used by
+  `ReferenceLive` to surface index sizes.
+  """
+  @spec card_type_counts(Ash.UUID.t()) :: %{atom() => non_neg_integer()}
+  def card_type_counts(user_id) when is_binary(user_id) do
+    require Ash.Query
+
+    Manillum.Archive.Card
+    |> Ash.Query.filter(user_id == ^user_id and status == :filed)
+    |> Ash.Query.select([:card_type])
+    |> Ash.read!(authorize?: false)
+    |> Enum.frequencies_by(& &1.card_type)
+  end
+
+  @doc """
+  List the user's tags with their filed-card counts, ordered by
+  count descending then alphabetically. Used by `ReferenceLive`'s
+  Themes tab and `CatalogLive`'s tag filter chips.
+  """
+  @spec list_tags_with_counts(Ash.UUID.t()) ::
+          [%{tag: Manillum.Archive.Tag.t(), count: non_neg_integer()}]
+  def list_tags_with_counts(user_id) when is_binary(user_id) do
+    require Ash.Query
+
+    Manillum.Archive.Tag
+    |> Ash.Query.filter(user_id == ^user_id)
+    |> Ash.Query.load(:cards)
+    |> Ash.Query.sort(name: :asc)
+    |> Ash.read!(authorize?: false)
+    |> Enum.map(fn tag ->
+      filed_count = Enum.count(tag.cards, &(&1.status == :filed))
+      %{tag: tag, count: filed_count}
+    end)
+    |> Enum.sort_by(fn %{count: c, tag: t} -> {-c, String.downcase(t.name)} end)
+  end
+
+  @doc """
+  Load a single filed/draft Card with the relations a detail view
+  needs: `:call_number`, `:tags`, `:capture` (and through-conversation
+  / -message for provenance), outgoing/incoming `Link`s for see-also
+  rendering. Returns `{:ok, card}` or `{:error, :not_found}`.
+
+  See-also partners are loaded via `see_also_partner_ids/1` to hide
+  the canonical-ordering detail from the caller — the LiveView gets
+  a symmetric "partners" list regardless of which side this card sits
+  on in the underlying `Link` rows.
+  """
+  @spec get_card_detail(Ash.UUID.t(), Ash.UUID.t()) ::
+          {:ok, Manillum.Archive.Card.t()} | {:error, :not_found}
+  def get_card_detail(user_id, card_id) when is_binary(user_id) and is_binary(card_id) do
+    require Ash.Query
+
+    Manillum.Archive.Card
+    |> Ash.Query.filter(id == ^card_id and user_id == ^user_id)
+    |> Ash.Query.load([
+      :call_number,
+      :tags,
+      capture: [:conversation, :message]
+    ])
+    |> Ash.read_one(authorize?: false)
+    |> case do
+      {:ok, nil} -> {:error, :not_found}
+      {:ok, card} -> {:ok, card}
+      {:error, _} -> {:error, :not_found}
+    end
+  end
+
+  @doc """
+  Given a card, return the related-by-tag siblings — other filed
+  cards (same user) that share at least one tag with the source card.
+  Excludes the source card itself. Loaded with `:call_number` for
+  rendering. Empty list when the card has no tags.
+  """
+  @spec related_by_tag(Manillum.Archive.Card.t(), keyword()) :: [Manillum.Archive.Card.t()]
+  def related_by_tag(%Manillum.Archive.Card{} = card, opts \\ []) do
+    require Ash.Query
+
+    tag_ids =
+      case card.tags do
+        %Ash.NotLoaded{} -> []
+        tags when is_list(tags) -> Enum.map(tags, & &1.id)
+      end
+
+    if tag_ids == [] do
+      []
+    else
+      limit = Keyword.get(opts, :limit, 8)
+
+      Manillum.Archive.Card
+      |> Ash.Query.filter(
+        user_id == ^card.user_id and status == :filed and id != ^card.id and
+          exists(tags, id in ^tag_ids)
+      )
+      |> Ash.Query.load([:call_number])
+      |> Ash.Query.sort(inserted_at: :desc)
+      |> Ash.Query.limit(limit)
+      |> Ash.read!(authorize?: false)
+    end
+  end
+
+  @doc """
+  Load the see-also partner cards for a card. Wraps
+  `see_also_partner_ids/1` with an `Ash.read` so callers get fully-
+  loaded `Card` structs with `:call_number`.
+  """
+  @spec see_also_partners(Ash.UUID.t()) :: [Manillum.Archive.Card.t()]
+  def see_also_partners(card_id) when is_binary(card_id) do
+    case see_also_partner_ids(card_id) do
+      [] ->
+        []
+
+      ids ->
+        require Ash.Query
+
+        Manillum.Archive.Card
+        |> Ash.Query.filter(id in ^ids)
+        |> Ash.Query.load([:call_number])
+        |> Ash.read!(authorize?: false)
+    end
+  end
+
   defp follow_redirect(user_id, drawer, date_token, slug) do
     require Ash.Query
 

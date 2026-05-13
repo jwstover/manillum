@@ -1,0 +1,188 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   .card_detail — single-card view at /cards/:id. The full surface of a
+   filed (or draft) card: recto + verso side by side, plus tags, entities,
+   see-also partners, related-by-tag siblings, and provenance back to
+   the source conversation.
+
+   Layout: a single centred column with manuscript-margin breathing room.
+   The two card faces sit on a 2-column grid that collapses to stacked at
+   narrow widths.
+   ───────────────────────────────────────────────────────────────────── */
+
+.card_detail {
+  max-width: 64rem;
+  margin: 0 auto;
+  padding: 2rem 2rem 3rem;
+  color: var(--color-ink);
+}
+
+.card_detail__head {
+  margin-bottom: 1.75rem;
+}
+
+.card_detail__title {
+  font-family: var(--font-mono);
+  font-size: var(--text-display-md);
+  font-weight: 500;
+  color: var(--color-oxblood);
+  letter-spacing: var(--tracking-mono-tight);
+  margin: 0.5rem 0 0.75rem;
+}
+
+.card_detail__meta {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-sm);
+  color: var(--color-ink-soft);
+  letter-spacing: var(--tracking-mono);
+  text-transform: uppercase;
+}
+
+.card_detail__sep {
+  color: var(--color-ink-faint);
+}
+
+.card_detail__type {
+  color: var(--color-ink);
+}
+
+.card_detail__status {
+  color: var(--color-forest);
+}
+
+.card_detail__faces {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  margin: 2rem 0;
+}
+
+@media (max-width: 56rem) {
+  .card_detail__faces {
+    grid-template-columns: 1fr;
+  }
+}
+
+.card_detail__face {
+  /* Override the default ~1° tilts — at detail size they read busy.
+     Keep the box shadow + 3px top rule (the recto's defining cue). */
+  transform: none !important;
+}
+
+.card_detail__verso-mark {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-xs);
+  color: var(--color-forest);
+  letter-spacing: var(--tracking-mono-wide);
+  text-transform: uppercase;
+}
+
+.card_detail__section {
+  margin: 2rem 0 1.5rem;
+}
+
+.card_detail__section-head {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-xs);
+  font-weight: 500;
+  color: var(--color-ink-faint);
+  letter-spacing: var(--tracking-mono-wide);
+  text-transform: uppercase;
+  margin: 0 0 0.75rem;
+}
+
+.card_detail__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.card_detail__entities {
+  font-family: var(--font-body);
+  font-size: var(--text-body-md);
+  color: var(--color-ink-soft);
+  line-height: var(--leading-body);
+  margin: 0;
+}
+
+.card_detail__entities em {
+  font-style: italic;
+  color: var(--color-ink);
+}
+
+.card_detail__refs {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.card_detail__ref {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  font-family: var(--font-body);
+  font-size: var(--text-body-md);
+  color: var(--color-ink);
+  text-decoration: none;
+}
+
+.card_detail__ref:hover {
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 0.2em;
+}
+
+.card_detail__ref-title {
+  font-family: var(--font-display);
+  font-style: italic;
+  color: var(--color-ink-soft);
+}
+
+.card_detail__provenance {
+  font-family: var(--font-body);
+  font-style: italic;
+  font-size: var(--text-body-md);
+  color: var(--color-ink-soft);
+  line-height: var(--leading-body);
+  margin: 0;
+}
+
+.card_detail__provenance em {
+  color: var(--color-ink);
+  font-style: italic;
+}
+
+.card_detail__provenance-scope {
+  font-family: var(--font-mono);
+  font-style: normal;
+  font-size: var(--text-mono-xs);
+  color: var(--color-brass);
+  letter-spacing: var(--tracking-mono);
+  text-transform: uppercase;
+}
+
+.card_detail__provenance-link {
+  font-family: var(--font-body);
+  font-style: italic;
+  color: var(--color-oxblood);
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 0.2em;
+}
+
+.card_detail__provenance-link:hover {
+  text-decoration-style: solid;
+}
+
+.card_detail__actions {
+  margin-top: 2.5rem;
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+}
